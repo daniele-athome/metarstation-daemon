@@ -6,14 +6,7 @@
 
 import sys
 
-
-class WeatherDaemon:
-    def __init__(self, args):
-        pass
-
-    def run(self):
-        pass
-
+from weather_test import WeatherDaemon
 
 if __name__ == '__main__':
     WeatherDaemon(sys.argv).run()
