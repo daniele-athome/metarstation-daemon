@@ -1,1 +1,1 @@
-from .main import WeatherDaemon
+from .main import main

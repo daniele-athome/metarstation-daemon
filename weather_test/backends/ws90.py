@@ -53,9 +53,11 @@ class WS90SensorBackend(SensorBackend):
         self._latest_data = SensorData()
 
     async def start(self):
+        _LOGGER.debug("WS90 scanner starting")
         await self._scanner.start()
 
     async def stop(self):
+        _LOGGER.debug("WS90 scanner stopping")
         await self._scanner.stop()
 
     async def get_data(self) -> list[SensorData]:
@@ -78,7 +80,7 @@ class WS90SensorBackend(SensorBackend):
             setattr(self._latest_data, prop_name, converter(value.native_value))
 
     def _callback(self, device: BLEDevice, advertisement_data: AdvertisementData):
-        _LOGGER.info(f"Device: {device.address}")
+        _LOGGER.debug(f"Device: {device.address}")
         if device.address != self.bt_address:
             _LOGGER.debug(f"Not our device, discarding advertisement")
             return
@@ -93,7 +95,7 @@ class WS90SensorBackend(SensorBackend):
 
         device_data = BTHomeBluetoothDeviceData()
         if device_data.update(service_info):
-            _LOGGER.info(f"Advertisement data: {device_data._sensor_values}")
+            _LOGGER.debug(f"Advertisement data: {device_data._sensor_values}")
             for sensor_value in device_data._sensor_values.values():
                 self._add_sensor_value(sensor_value)
 
