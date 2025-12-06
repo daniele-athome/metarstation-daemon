@@ -22,6 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 def _is_packet1(data: BTHomeBluetoothDeviceData) -> bool:
     return DeviceKey('illuminance', None) in data._sensor_values
 
+
 def _is_packet2(data: BTHomeBluetoothDeviceData) -> bool:
     return DeviceKey('battery', None) in data._sensor_values
 
@@ -46,7 +47,10 @@ class WS90SensorBackend(SensorBackend):
     def __init__(self, config):
         super().__init__(config)
         self.bt_address: str = config['bt_address']
-        self._scanner = BleakScanner(self._callback, scanning_mode='active', service_uuids=[SERVICE_DATA_UUID])
+        # TODO passive scan doesn't work without some tricks; it's probably better to just use active scan at regular intervals anyway
+        self._scanner = BleakScanner(self._callback,
+                                     scanning_mode='active',
+                                     service_uuids=[SERVICE_DATA_UUID])
         self._data = []
         self._packet1_received = False
         self._packet2_received = False
