@@ -1,15 +1,25 @@
-import dataclasses
 import datetime
+from dataclasses import dataclass, field
 
+from dataclasses_json import dataclass_json, config
+from marshmallow import fields
 
 BATTERY_VALUE_AC = -1
 """Battery value when AC is connected."""
 
 
-@dataclasses.dataclass(kw_only=True)
-class SensorData:
+@dataclass(kw_only=True)
+@dataclass_json
+class SensorData(dict):
 
-    timestamp: datetime.datetime = datetime.datetime.now(datetime.UTC)
+    timestamp: datetime.datetime = field(
+        metadata=config(
+            encoder=datetime.datetime.isoformat,
+            decoder=datetime.datetime.fromisoformat,
+            mm_field=fields.DateTime(format='iso')
+        ),
+        default=datetime.datetime.now(datetime.UTC),
+    )
     """Sensor reading timestamp."""
 
     battery: int|None = -1

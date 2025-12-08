@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["bleak", "bthome-ble"]
+# dependencies = ["bleak", "bthome-ble", "httpx", "dataclasses-json"]
 # ///
 
 import sys

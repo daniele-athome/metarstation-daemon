@@ -1,0 +1,9 @@
+[main]
+collect_interval_secs = 60
+
+[backend]
+bt_address = "08:B9:5F:D4:2D:58"
+
+[frontend]
+url = "http://localhost:8787/push"
+api_token = "api_token"

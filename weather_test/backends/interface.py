@@ -12,4 +12,5 @@ class SensorBackend:
         raise NotImplementedError()
 
     async def get_data(self) -> list[SensorData]:
+        """Retrieves the latest batch of data to be sent to the frontend."""
         raise NotImplementedError()

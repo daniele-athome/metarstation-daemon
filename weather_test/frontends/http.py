@@ -1,5 +1,7 @@
 import logging
 
+import httpx
+
 from .interface import DataFrontend
 from ..data import SensorData
 
@@ -10,7 +12,8 @@ class HTTPDataFrontend(DataFrontend):
 
     def __init__(self, config: dict):
         super().__init__(config)
-        # TODO
+        self.push_url: str = config['url']
+        self.api_token: str = config['api_token']
 
     async def setup(self):
         # TODO
@@ -18,4 +21,18 @@ class HTTPDataFrontend(DataFrontend):
 
     async def send_data(self, data: list[SensorData]):
         _LOGGER.debug(f"Sending data: {data}")
-        # TODO
+        async with httpx.AsyncClient() as client:
+            auth = BearerTokenAuth(self.api_token)
+            r = await client.post(self.push_url, json=[x.to_dict() for x in data], auth=auth)
+            if r.status_code not in (200, 201):
+                # TODO custom exception maybe?
+                raise RuntimeError(f"HTTP request failed with status code {r.status_code}")
+
+
+class BearerTokenAuth(httpx.Auth):
+    def __init__(self, token):
+        self.token = token
+
+    def auth_flow(self, request):
+        request.headers['Authorization'] = f"Bearer {self.token}"
+        yield request

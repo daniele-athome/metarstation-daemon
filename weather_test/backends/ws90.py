@@ -57,7 +57,7 @@ class WS90SensorBackend(SensorBackend):
         self._latest_data = SensorData()
 
     async def start(self):
-        _LOGGER.debug("WS90 scanner starting")
+        _LOGGER.debug(f"WS90 scanner for {self.bt_address} starting")
         await self._scanner.start()
 
     async def stop(self):
