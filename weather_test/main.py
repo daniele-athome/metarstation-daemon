@@ -4,16 +4,20 @@ import functools
 import logging
 import signal
 import tomllib
+from collections import deque
 from io import BufferedReader
 from typing import BinaryIO, IO
 
-from weather_test.backends.interface import SensorBackend
+from weather_test.backends.interface import SensorBackend, SensorBackendQueue
 from weather_test.backends.ws90 import WS90SensorBackend
 from weather_test.data import SensorData
 from weather_test.frontends.http import HTTPDataFrontend
 from weather_test.frontends.interface import DataFrontend
 
 _LOGGER = logging.getLogger(__name__)
+
+DATA_QUEUE_LIMIT = 200
+"""Limit of the data queue used by sensor backends."""
 
 
 class WeatherDaemon:
@@ -31,7 +35,8 @@ class WeatherDaemon:
         with open(config_file, 'rb') as config_file_fp:
             self.config = tomllib.load(config_file_fp)
 
-        self._backend: SensorBackend = WS90SensorBackend(self.config['backend'])
+        self._data_queue = deque(maxlen=DATA_QUEUE_LIMIT)
+        self._backend: SensorBackend = WS90SensorBackend(self.config['backend'], SensorBackendQueue(self._data_queue))
         self._frontend: DataFrontend = HTTPDataFrontend(self.config['frontend'])
         self._collect_interval_secs = self.config['main']['collect_interval_secs']
         self._shutdown_event = asyncio.Event()
@@ -66,9 +71,12 @@ class WeatherDaemon:
         while not self._shutdown_event.is_set():
             await asyncio.sleep(self._collect_interval_secs)
 
-            #_LOGGER.debug("Collecting data")
-            data = await self._backend.get_data()
-            if data:
+            # _LOGGER.debug("Collecting data")
+            # TODO is there a more "pythonic" way of doing this?
+            data = []
+            while len(self._data_queue) > 0:
+                data.append(self._data_queue.popleft())
+            if len(data) > 0:
                 try:
                     # we also send the data that failed during the previous attempt
                     await self._frontend.send_data(self._failed_data + data)

@@ -7,7 +7,7 @@ from bthome_ble import BTHomeBluetoothDeviceData
 from habluetooth import BluetoothServiceInfoBleak
 from sensor_state_data import SensorValue, DeviceKey
 
-from .interface import SensorBackend
+from .interface import SensorBackend, SensorBackendQueue
 from ..data import SensorData
 
 SERVICE_DATA_UUID = '6720fc43-27ed-4c02-ac27-e4ea85b5bcfd'
@@ -44,14 +44,13 @@ DATA_MAPPING = {
 
 class WS90SensorBackend(SensorBackend):
 
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, queue: SensorBackendQueue):
+        super().__init__(config, queue)
         self.bt_address: str = config['bt_address']
         # TODO passive scan doesn't work without some tricks; it's probably better to just use active scan at regular intervals anyway
         self._scanner = BleakScanner(self._callback,
                                      scanning_mode='active',
                                      service_uuids=[SERVICE_DATA_UUID])
-        self._data = []
         self._packet1_received = False
         self._packet2_received = False
         self._latest_data = SensorData()
@@ -64,14 +63,9 @@ class WS90SensorBackend(SensorBackend):
         _LOGGER.debug("WS90 scanner stopping")
         await self._scanner.stop()
 
-    async def get_data(self) -> list[SensorData]:
-        data = list(self._data)
-        self._data.clear()
-        return data
-
     def _push_sensor_value(self):
         self._latest_data.timestamp = datetime.datetime.now(datetime.UTC)
-        self._data.append(self._latest_data)
+        self.queue.push(self._latest_data)
         # reset buffer object
         self._latest_data = SensorData()
         self._packet1_received = False
