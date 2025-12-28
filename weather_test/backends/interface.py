@@ -5,10 +5,10 @@ from ..data import SensorData
 
 class SensorBackendQueue:
     def __init__(self, queue):
-        self._queue: deque = queue
+        self._queue: deque[SensorData] = queue
 
     def push(self, data: SensorData):
-        self._queue.append(data)
+        self._queue.appendleft(data)
 
 
 class SensorBackend:

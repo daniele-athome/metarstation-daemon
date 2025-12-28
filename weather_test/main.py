@@ -19,6 +19,9 @@ _LOGGER = logging.getLogger(__name__)
 DATA_QUEUE_LIMIT = 200
 """Limit of the data queue used by sensor backends."""
 
+FAILED_QUEUE_LIMIT = 200
+"""Limit of the data queue for caching data that failed to send to the frontends."""
+
 
 class WeatherDaemon:
     def __init__(self, args):
@@ -40,7 +43,7 @@ class WeatherDaemon:
         self._frontend: DataFrontend = HTTPDataFrontend(self.config['frontend'])
         self._collect_interval_secs = self.config['main']['collect_interval_secs']
         self._shutdown_event = asyncio.Event()
-        self._failed_data: list[SensorData] = []
+        self._failed_data: deque[SensorData] = deque(maxlen=FAILED_QUEUE_LIMIT)
 
     async def run(self):
         def sig_handler(code):
@@ -75,17 +78,16 @@ class WeatherDaemon:
             # TODO is there a more "pythonic" way of doing this?
             data = []
             while len(self._data_queue) > 0:
-                data.append(self._data_queue.popleft())
+                data.append(self._data_queue.pop())
             if len(data) > 0:
                 try:
                     # we also send the data that failed during the previous attempt
-                    await self._frontend.send_data(self._failed_data + data)
+                    await self._frontend.send_data(list(self._failed_data) + data)
                     self._failed_data.clear()
                 except:
                     # TODO proper exception handling
                     _LOGGER.warning("Failed to send data", exc_info=True)
                     # store the data for a later retry attempt
-                    # TODO rotate away old values to avoid OOM errors
                     self._failed_data.extend(data)
 
 
