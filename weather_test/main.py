@@ -73,11 +73,11 @@ class WeatherDaemon:
                     # we also send the data that failed during the previous attempt
                     await self._frontend.send_data(self._failed_data + data)
                     self._failed_data.clear()
-                except Exception as e:
+                except:
                     # TODO proper exception handling
                     _LOGGER.warning("Failed to send data", exc_info=True)
                     # store the data for a later retry attempt
-                    self._failed_data.append(*data)
+                    self._failed_data.extend(data)
 
 
 def main(args):
