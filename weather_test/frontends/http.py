@@ -10,6 +10,9 @@ _LOGGER = logging.getLogger(__name__)
 
 class HTTPDataFrontend(DataFrontend):
 
+    # TODO not a good thing really
+    DATA_LIMIT = 50
+
     def __init__(self, config: dict):
         super().__init__(config)
         self.push_url: str = config['url']
@@ -23,7 +26,7 @@ class HTTPDataFrontend(DataFrontend):
         _LOGGER.debug(f"Sending data: {data}")
         async with httpx.AsyncClient() as client:
             auth = BearerTokenAuth(self.api_token)
-            r = await client.post(self.push_url, json=[x.to_dict() for x in data], auth=auth)
+            r = await client.post(self.push_url, json=[x.to_dict() for x in data[-self.DATA_LIMIT:]], auth=auth)
             if r.status_code not in (200, 201):
                 # TODO custom exception maybe?
                 raise RuntimeError(f"HTTP request failed with status code {r.status_code}")

@@ -77,6 +77,7 @@ class WeatherDaemon:
                     # TODO proper exception handling
                     _LOGGER.warning("Failed to send data", exc_info=True)
                     # store the data for a later retry attempt
+                    # TODO rotate away old values to avoid OOM errors
                     self._failed_data.extend(data)
 
 
