@@ -50,7 +50,9 @@ class WS90SensorBackend(SensorBackend):
         # TODO passive scan doesn't work without some tricks; it's probably better to just use active scan at regular intervals anyway
         self._scanner = BleakScanner(self._callback,
                                      scanning_mode='active',
-                                     service_uuids=[SERVICE_DATA_UUID])
+                                     # disable specific service filtering for now
+                                     #service_uuids=[SERVICE_DATA_UUID]
+                                     )
         self._packet1_received = False
         self._packet2_received = False
         self._latest_data = SensorData()
@@ -78,9 +80,9 @@ class WS90SensorBackend(SensorBackend):
             setattr(self._latest_data, prop_name, converter(value.native_value))
 
     def _callback(self, device: BLEDevice, advertisement_data: AdvertisementData):
-        _LOGGER.debug(f"Device: {device.address}")
+        #_LOGGER.debug(f"Device: {device.address}")
         if device.address != self.bt_address:
-            _LOGGER.debug(f"Not our device, discarding advertisement")
+            #_LOGGER.debug(f"Not our device, discarding advertisement")
             return
 
         if not advertisement_data:
