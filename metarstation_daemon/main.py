@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import functools
 import logging
+import os
 import signal
 import tomllib
 from collections import deque
@@ -91,9 +92,16 @@ class WeatherDaemon:
                     self._failed_data.extend(data)
 
 
+def is_journal_enabled():
+    return 'JOURNAL_STREAM' in os.environ
+
+
 def main(args):
     # TODO proper logging configuration
-    formatter = "[%(asctime)s] %(name)s %(levelname)s - %(message)s"
+    if is_journal_enabled():
+        formatter = "%(name)s %(levelname)s - %(message)s"
+    else:
+        formatter = "[%(asctime)s] %(name)s %(levelname)s - %(message)s"
     logging.basicConfig(level=logging.INFO, format=formatter)
     logging.getLogger(__package__).setLevel(logging.DEBUG)
     # enable HTTP logging
