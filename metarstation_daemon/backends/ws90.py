@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import logging
 
@@ -54,14 +55,20 @@ class WS90SensorBackend(SensorBackend):
         self._packet1_received = False
         self._packet2_received = False
         self._latest_data = SensorData()
+        self._shutdown_event = asyncio.Event()
 
     async def start(self):
         _LOGGER.debug(f"WS90 scanner for {self.bt_address} starting")
-        await self._scanner.start()
+        asyncio.get_running_loop().create_task(self._scanner_loop())
 
     async def stop(self):
         _LOGGER.debug("WS90 scanner stopping")
-        await self._scanner.stop()
+        self._shutdown_event.set()
+
+    async def _scanner_loop(self):
+        while not self._shutdown_event.is_set():
+            async with self._scanner:
+                await asyncio.sleep(30.0)
 
     def _push_sensor_value(self):
         self._latest_data.timestamp = datetime.datetime.now(datetime.UTC)
