@@ -6,7 +6,7 @@
 
 import sys
 
-import weather_test
+import metarstation_daemon
 
 if __name__ == '__main__':
-    weather_test.main(sys.argv)
+    metarstation_daemon.main(sys.argv)

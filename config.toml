@@ -1,4 +1,6 @@
 [main]
+# this is the time between data uploads
+# if there is no data available to upload, the interval will be skipped
 collect_interval_secs = 60
 
 [backend]

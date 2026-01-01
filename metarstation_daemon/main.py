@@ -8,11 +8,11 @@ from collections import deque
 from io import BufferedReader
 from typing import BinaryIO, IO
 
-from weather_test.backends.interface import SensorBackend, SensorBackendQueue
-from weather_test.backends.ws90 import WS90SensorBackend
-from weather_test.data import SensorData
-from weather_test.frontends.http import HTTPDataFrontend
-from weather_test.frontends.interface import DataFrontend
+from .backends.interface import SensorBackend, SensorBackendQueue
+from .backends.ws90 import WS90SensorBackend
+from .data import SensorData
+from .frontends.http import HTTPDataFrontend
+from .frontends.interface import DataFrontend
 
 _LOGGER = logging.getLogger(__name__)
 
