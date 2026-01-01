@@ -1,0 +1,57 @@
+# METABEGIN
+# X-Env-Layer-Name: metarstation
+# X-Env-Layer-Category: service
+# X-Env-Layer-Desc: METAR Station on-device daemon service layer
+# X-Env-Layer-Requires: rpi-user-credentials,systemd-net-min
+# X-Env-Layer-Provides: metarstation-daemon
+# X-Env-VarPrefix: metarstation
+#
+# X-Env-Var-collect_interval_secs: 60
+# X-Env-Var-collect_interval_secs-Desc: Data uploads interval in seconds.
+# X-Env-Var-collect_interval_secs-Required: n
+# X-Env-Var-collect_interval_secs-Valid: int
+# X-Env-Var-collect_interval_secs-Set: y
+#
+# X-Env-Var-backend_bt_address: 00:00:00:00:00:00
+# X-Env-Var-backend_bt_address-Desc: Default URL the web kiosk will load at startup.
+# X-Env-Var-backend_bt_address-Required: y
+# X-Env-Var-backend_bt_address-Valid: regex:^[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}$
+# X-Env-Var-backend_bt_address-Set: y
+#
+# X-Env-Var-frontend_url: https://whatever-api-service.io/push
+# X-Env-Var-frontend_url-Desc: URL to upload data to.
+# X-Env-Var-frontend_url-Required: y
+# X-Env-Var-frontend_url-Valid: regex:^http[s]?://[a-zA-Z0-9.-]+[a-zA-Z0-9]/?.*$
+# X-Env-Var-frontend_url-Set: y
+#
+# X-Env-Var-frontend_api_token:
+# X-Env-Var-frontend_api_token-Desc: API authentication token for the frontend.
+# X-Env-Var-frontend_api_token-Required: y
+# X-Env-Var-frontend_api_token-Valid: string
+# X-Env-Var-frontend_api_token-Set: n
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - python3
+    - bluetooth
+  customize-hooks:
+    - |-
+      curl -LsSf https://astral.sh/uv/install.sh | chroot "$1" sh -c 'UV_NO_MODIFY_PATH=1 sh -s stdin -q'
+    - |-
+      git clone https://github.com/daniele-athome/metarstation-daemon.git "$1/opt/metarstation-daemon"
+    - |-
+      chroot "$1" mkdir -m 0775 -p /etc/metarstation
+      export METARSTATION_COLLECT_INTERVAL_SECS=$IGconf_metarstation_collect_interval_secs
+      export METARSTATION_BACKEND_ADDRESS=$IGconf_metarstation_backend_bt_address
+      export METARSTATION_FRONTEND_URL=$IGconf_metarstation_frontend_url
+      export METARSTATION_FRONTEND_TOKEN=$IGconf_metarstation_frontend_api_token
+      envsubst < config.toml.tpl > $1/etc/metarstation/config.toml
+      chroot "$1" chown $IGconf_device_user1: /etc/metarstation/config.toml
+      chroot "$1" chmod 400 /etc/metarstation/config.toml
+    - |-
+      export METARSTATION_USER="$IGconf_device_user1"
+      envsubst < weather-daemon.service.tpl > $1/etc/systemd/system/weather-daemon.service
+    - $BDEBSTRAP_HOOKS/enable-units "$1" weather-daemon
+
+# chroot "$1" sh -c 'curl -LsSf https://astral.sh/uv/install.sh | UV_NO_MODIFY_PATH=1 sh -s stdin -q'

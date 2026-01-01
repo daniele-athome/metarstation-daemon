@@ -1,0 +1,19 @@
+device:
+  layer: rpi3
+
+image:
+  layer: image-rpios
+  boot_part_size: 200%
+  root_part_size: 120%
+  name: metarstationimage
+layer:
+  base: trixie-minbase
+  app: metarstation
+metarstation:
+  collect_interval_secs: 60
+  backend_bt_address: "08:B9:5F:D4:2D:58"
+  frontend_url: "http://localhost:8787/push"
+  frontend_api_token: "api_token"
+ssh:
+  # set using command line argument -- pubkey_user1:
+  pubkey_only: y
