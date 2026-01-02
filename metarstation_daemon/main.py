@@ -77,9 +77,11 @@ class WeatherDaemon:
 
             # _LOGGER.debug("Collecting data")
             # TODO is there a more "pythonic" way of doing this?
+            # TODO we should collect all data available from the backend and either use max|min(timestamp) or an average
             data = []
             while len(self._data_queue) > 0:
-                data.append(self._data_queue.pop())
+                #data.append(self._data_queue.pop())
+                data = [self._data_queue.pop()]
             if len(data) > 0:
                 try:
                     # we also send the data that failed during the previous attempt
