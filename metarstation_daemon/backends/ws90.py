@@ -67,6 +67,7 @@ class WS90SensorBackend(SensorBackend):
 
     def _push_sensor_value(self):
         self._latest_data.timestamp = datetime.datetime.now(datetime.UTC)
+        _LOGGER.info(f"Latest data: {self._latest_data}")
         self.queue.push(self._latest_data)
         # reset buffer object
         self._latest_data = SensorData()
@@ -105,5 +106,4 @@ class WS90SensorBackend(SensorBackend):
                 self._packet2_received = True
 
             if self._packet1_received and self._packet2_received:
-                _LOGGER.info(f"Latest data: {self._latest_data}")
                 self._push_sensor_value()
