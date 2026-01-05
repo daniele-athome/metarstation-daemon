@@ -9,7 +9,8 @@ from collections import deque
 from io import BufferedReader
 from typing import BinaryIO, IO
 
-from .backend.interface import SensorBackend, SensorBackendQueue
+from .backend.interface import SensorBackend, SensorBackendQueue, WebcamBackend, WebcamBackendCallback
+from .backend.tapocam import TapoWebcamBackend
 from .backend.ws90 import WS90SensorBackend
 from .data import SensorData
 from .frontend.http import HTTPDataFrontend
@@ -39,9 +40,20 @@ class WeatherDaemon:
         with open(config_file, 'rb') as config_file_fp:
             self.config = tomllib.load(config_file_fp)
 
+        # sensor backend
         self._data_queue = deque(maxlen=DATA_QUEUE_LIMIT)
         self._backend: SensorBackend = WS90SensorBackend(self.config['backend'], SensorBackendQueue(self._data_queue))
+
+        # webcam backend
+        self._webcam: WebcamBackend|None = None
+        self._webcam_callback: WebcamBackendCallback|None = None
+        if 'webcam' in self.config:
+            self._webcam_callback = WebcamBackendCallback()
+            self._webcam: WebcamBackend|None = TapoWebcamBackend(self.config['webcam'], self._webcam_callback)
+
+        # data upload frontend
         self._frontend: DataFrontend = HTTPDataFrontend(self.config['frontend'])
+
         self._collect_interval_secs = self.config['main']['collect_interval_secs']
         self._shutdown_event = asyncio.Event()
         self._failed_data: deque[SensorData] = deque(maxlen=FAILED_QUEUE_LIMIT)
@@ -57,6 +69,10 @@ class WeatherDaemon:
         # start collecting data from the device
         await self._backend.start()
 
+        # start collecting images from the webcam
+        if self._webcam:
+            await self._webcam.start()
+
         # setup the data collection frontend
         await self._frontend.setup()
 
@@ -68,6 +84,8 @@ class WeatherDaemon:
         # cleanup
         data_collect_task.cancel()
         await self._backend.stop()
+        if self._webcam:
+            await self._webcam.stop()
 
     async def _collect_data_start(self):
         _LOGGER.debug("Starting data collection")
@@ -100,6 +118,15 @@ class WeatherDaemon:
                     _LOGGER.warning("Failed to send data", exc_info=True)
                     # store the data for a later retry attempt
                     self._failed_data.extend(data)
+
+            if self._webcam_callback:
+                webcam_data = self._webcam_callback.get_data()
+                if webcam_data:
+                    try:
+                        await self._frontend.send_webcam(webcam_data)
+                    except:
+                        # TODO proper exception handling
+                        _LOGGER.warning("Failed to send webcam data", exc_info=True)
 
 
 def is_journal_enabled():

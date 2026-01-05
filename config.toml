@@ -6,6 +6,18 @@ collect_interval_secs = 60
 [backend]
 bt_address = "08:B9:5F:D4:2D:58"
 
+[webcam]
+ip_address = "192.168.100.161"
+camera_username = "camera_username"
+camera_password = "camera_password"
+cloud_username = "admin"
+cloud_password = "cloud_account_password"
+snapshot_interval_secs = 40
+debug = false
+# HD (1080p), VGA (720p)
+quality = "HD"
+
 [frontend]
-url = "http://localhost:8787/push"
+data_url = "http://localhost:8787/push"
+image_url = "http://localhost:8787/image"
 api_token = "api_token"
