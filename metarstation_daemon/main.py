@@ -9,11 +9,11 @@ from collections import deque
 from io import BufferedReader
 from typing import BinaryIO, IO
 
-from .backends.interface import SensorBackend, SensorBackendQueue
-from .backends.ws90 import WS90SensorBackend
+from .backend.interface import SensorBackend, SensorBackendQueue
+from .backend.ws90 import WS90SensorBackend
 from .data import SensorData
-from .frontends.http import HTTPDataFrontend
-from .frontends.interface import DataFrontend
+from .frontend.http import HTTPDataFrontend
+from .frontend.interface import DataFrontend
 
 _LOGGER = logging.getLogger(__name__)
 
