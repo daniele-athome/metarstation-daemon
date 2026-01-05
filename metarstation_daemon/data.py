@@ -57,3 +57,16 @@ class SensorData(dict):
 
     precipitation: float|None = None
     """Precipitation (mm/h)."""
+
+
+@dataclass(kw_only=True)
+class WebcamData:
+
+    timestamp: datetime.datetime = datetime.datetime.now(datetime.UTC)
+    """Webcam snapshot timestamp."""
+
+    image_data: bytes
+    """Snapshot image data."""
+
+    image_type: str
+    """Image MIME type."""

@@ -8,11 +8,14 @@ periodically uploaded to some server.
 At the moment only the following is supported:
 
 * [Ecowitt WS90 Shelly-based weather station](https://shelly-api-docs.shelly.cloud/docs-ble/Devices/BLU_ZB/wstation/)
+* Some Tapo cameras (only tested with [Tapo C500](https://www.tapo.com/en/product/smart-camera/tapo-c500/))
 * Sending data to a HTTP endpoint supporting bearer token authentication (as in `Authorization: Bearer ...`)
 
 ## Configure
 
 Configuration is in `config.toml`.
+
+Webcam integration requires the `ffmpeg` binary to be installed in your `PATH`.
 
 ## Run
 
