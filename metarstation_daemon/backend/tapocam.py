@@ -25,12 +25,15 @@ async def _print_ffmpeg_logs(stderr):
         _LOGGER.debug(f"  {line.decode().strip()}")
 
 
+# TODO handle Tapo/Streamer errors!!!
 class TapoWebcamBackend(WebcamBackend):
 
     def __init__(self, config, callback: WebcamBackendCallback):
         super().__init__(config, callback)
         self._snapshot_interval_secs = config['snapshot_interval_secs']
         self._debug = config.get('debug', False)
+        # FIXME this constructor BLOCKS (!!) trying to connect to the camera!!!
+        #       Also, it throws an exception the connection fails, there is currently no (async) retry mechanism
         self._tapo = Tapo(
             config['ip_address'],
             config['cloud_username'],
@@ -47,6 +50,9 @@ class TapoWebcamBackend(WebcamBackend):
             mode="hls",
             quality=config.get('quality', 'HD'),
         )
+        self._snapshot_last: float = 0
+        """Last snapshot timestamp. It will be compared against the stream files to see if the image has actually been produced."""
+
         self._snapshot_task = None
         self._shutdown_event = asyncio.Event()
 
@@ -93,10 +99,15 @@ class TapoWebcamBackend(WebcamBackend):
         """
         ffmpeg -i stream_output.m3u8 -vframes 1 -q:v 10 snapshot.jpg, but with pipes.
         """
+
+        if not self._stream_changed():
+            _LOGGER.debug('Stream did not change, not taking snapshot')
+            return
+
         cmd = [
             'ffmpeg',
             '-i',
-            str(Path(self._tempdir) / _STREAM_FILENAME),
+            str(self._stream_file()),
             '-an',
             '-c:v',
             'mjpeg',
@@ -126,3 +137,14 @@ class TapoWebcamBackend(WebcamBackend):
             self.callback.update(WebcamData(image_data=snapshot_data, image_type=_IMAGE_TYPE))
         else:
             await _print_ffmpeg_logs(self._snapshot_process.stderr)
+
+    def _stream_changed(self) -> bool:
+        stream_stat = self._stream_file().stat()
+        if self._snapshot_last != stream_stat.st_mtime:
+            self._snapshot_last = stream_stat.st_mtime
+            return True
+        else:
+            return False
+
+    def _stream_file(self):
+        return Path(self._tempdir) / _STREAM_FILENAME
