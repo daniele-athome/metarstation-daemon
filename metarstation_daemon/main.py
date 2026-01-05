@@ -73,7 +73,15 @@ class WeatherDaemon:
         _LOGGER.debug("Starting data collection")
 
         while not self._shutdown_event.is_set():
-            await asyncio.sleep(self._collect_interval_secs)
+            try:
+                # wait for the shutdown event or the collect interval, whichever comes first
+                await asyncio.wait_for(
+                    self._shutdown_event.wait(),
+                    timeout=self._collect_interval_secs
+                )
+            except asyncio.TimeoutError:
+                pass
+            # we don't check for the shutdown event just yet, giving one last chance to send out the last data packet
 
             # _LOGGER.debug("Collecting data")
             # TODO is there a more "pythonic" way of doing this?
