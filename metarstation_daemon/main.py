@@ -32,7 +32,6 @@ class WeatherDaemon:
             description='A weather test daemon',
             epilog='Not really of much help as of this moment.')
         args_parser.add_argument('-c', '--config', required=True, help='path to configuration file')
-        # FIXME the 1: it's because of the uv shebang in the main script; we need a more stable solution though
         parsed_args = args_parser.parse_args(args[1:])
 
         config_file = parsed_args.config
