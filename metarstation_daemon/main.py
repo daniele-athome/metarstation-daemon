@@ -12,7 +12,7 @@ from typing import BinaryIO, IO
 from .backend.interface import SensorBackend, SensorBackendQueue, WebcamBackend, WebcamBackendCallback
 from .backend.tapocam import TapoWebcamBackend
 from .backend.ws90 import WS90SensorBackend
-from .data import SensorData
+from .data import SensorData, WebcamData
 from .frontend.http import HTTPDataFrontend
 from .frontend.interface import DataFrontend
 
@@ -44,16 +44,15 @@ class WeatherDaemon:
         self._backend: SensorBackend = WS90SensorBackend(self.config['backend'], SensorBackendQueue(self._data_queue))
 
         # webcam backend
-        self._webcam: WebcamBackend|None = None
-        self._webcam_callback: WebcamBackendCallback|None = None
+        self._webcam: WebcamBackend | None = None
+        self._webcam_callback: WebcamBackendCallback | None = None
         if 'webcam' in self.config:
             self._webcam_callback = WebcamBackendCallback()
-            self._webcam: WebcamBackend|None = TapoWebcamBackend(self.config['webcam'], self._webcam_callback)
+            self._webcam: WebcamBackend | None = TapoWebcamBackend(self.config['webcam'], self._webcam_callback)
 
         # data upload frontend
         self._frontend: DataFrontend = HTTPDataFrontend(self.config['frontend'])
 
-        self._collect_interval_secs = self.config['main']['collect_interval_secs']
         self._shutdown_event = asyncio.Event()
         self._failed_data: deque[SensorData] = deque(maxlen=FAILED_QUEUE_LIMIT)
 
@@ -91,20 +90,20 @@ class WeatherDaemon:
 
         while not self._shutdown_event.is_set():
             task_data_queue: asyncio.Future[SensorData] = asyncio.create_task(self._data_queue.get())
-            # TODO task_webcam_queue = ...
+            task_webcam_data: asyncio.Future[WebcamData] = asyncio.create_task(self._webcam_callback.get_data())
             task_shutdown_event = asyncio.create_task(self._shutdown_event.wait())
 
             done_tasks, pending_tasks = await asyncio.wait(
-                # TODO add task_webcam_queue as well
-                [task_data_queue, task_shutdown_event],
+                [task_data_queue, task_webcam_data, task_shutdown_event],
                 return_when=asyncio.FIRST_COMPLETED
             )
 
+            # cancel any pending tasks
+            [t.cancel() for t in pending_tasks]
+            # return_exceptions=True - prevent raise of asyncio.CancelledError
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
+
             if self._shutdown_event.is_set():
-                # cancel any pending tasks
-                [t.cancel() for t in pending_tasks]
-                # return_exceptions=True - prevent raise of asyncio.CancelledError
-                await asyncio.gather(*pending_tasks, return_exceptions=True)
                 # exit immediately
                 break
 
@@ -122,19 +121,8 @@ class WeatherDaemon:
                     # store the data for a later retry attempt
                     self._failed_data.append(data)
 
-            try:
-                # wait for the shutdown event or the collect interval, whichever comes first
-                # FIXME this wait now interferes with the code above that uses a queue-waiting mechanism
-                await asyncio.wait_for(
-                    self._shutdown_event.wait(),
-                    timeout=self._collect_interval_secs
-                )
-            except asyncio.TimeoutError:
-                pass
-            # we don't check for the shutdown event just yet, giving one last chance to send out the last data packet
-
-            if self._webcam_callback:
-                webcam_data = self._webcam_callback.get_data()
+            if task_webcam_data in done_tasks:
+                webcam_data = task_webcam_data.result()
                 if webcam_data:
                     try:
                         await self._frontend.send_webcam(webcam_data)

@@ -31,15 +31,17 @@ class SensorBackend:
 class WebcamBackendCallback:
     def __init__(self):
         self._data: WebcamData|None = None
+        self._event = asyncio.Event()
 
     def update(self, data: WebcamData):
         self._data = data
+        self._event.set()
 
-    def get_data(self) -> WebcamData:
-        if self._data is None:
-            raise ValueError('No data available')
+    async def get_data(self) -> WebcamData:
+        await self._event.wait()
         data = self._data
         self._data = None
+        self._event.clear()
         return data
 
 
