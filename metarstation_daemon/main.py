@@ -21,7 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 DATA_QUEUE_LIMIT = 200
 """Limit of the data queue used by sensor backends."""
 
-FAILED_QUEUE_LIMIT = 200
+FAILED_QUEUE_LIMIT = 50
 """Limit of the data queue for caching data that failed to send to the frontends."""
 
 
@@ -40,7 +40,7 @@ class WeatherDaemon:
             self.config = tomllib.load(config_file_fp)
 
         # sensor backend
-        self._data_queue = deque(maxlen=DATA_QUEUE_LIMIT)
+        self._data_queue = asyncio.Queue(maxsize=DATA_QUEUE_LIMIT)
         self._backend: SensorBackend = WS90SensorBackend(self.config['backend'], SensorBackendQueue(self._data_queue))
 
         # webcam backend
@@ -90,8 +90,41 @@ class WeatherDaemon:
         _LOGGER.debug("Starting data collection")
 
         while not self._shutdown_event.is_set():
+            task_data_queue: asyncio.Future[SensorData] = asyncio.create_task(self._data_queue.get())
+            # TODO task_webcam_queue = ...
+            task_shutdown_event = asyncio.create_task(self._shutdown_event.wait())
+
+            done_tasks, pending_tasks = await asyncio.wait(
+                # TODO add task_webcam_queue as well
+                [task_data_queue, task_shutdown_event],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+
+            if self._shutdown_event.is_set():
+                # cancel any pending tasks
+                [t.cancel() for t in pending_tasks]
+                # return_exceptions=True - prevent raise of asyncio.CancelledError
+                await asyncio.gather(*pending_tasks, return_exceptions=True)
+                # exit immediately
+                break
+
+            if task_data_queue in done_tasks:
+                # _LOGGER.debug(f"Collecting data")
+                # we got sensor data!
+                data = task_data_queue.result()
+                try:
+                    # we also send the data that failed during the previous attempt
+                    await self._frontend.send_data([*self._failed_data, data])
+                    self._failed_data.clear()
+                except:
+                    # TODO proper exception handling
+                    _LOGGER.warning("Failed to send data", exc_info=True)
+                    # store the data for a later retry attempt
+                    self._failed_data.append(data)
+
             try:
                 # wait for the shutdown event or the collect interval, whichever comes first
+                # FIXME this wait now interferes with the code above that uses a queue-waiting mechanism
                 await asyncio.wait_for(
                     self._shutdown_event.wait(),
                     timeout=self._collect_interval_secs
@@ -99,24 +132,6 @@ class WeatherDaemon:
             except asyncio.TimeoutError:
                 pass
             # we don't check for the shutdown event just yet, giving one last chance to send out the last data packet
-
-            # _LOGGER.debug("Collecting data")
-            # TODO is there a more "pythonic" way of doing this?
-            # TODO we should collect all data available from the backend and either use max|min(timestamp) or an average
-            data = []
-            while len(self._data_queue) > 0:
-                #data.append(self._data_queue.pop())
-                data = [self._data_queue.pop()]
-            if len(data) > 0:
-                try:
-                    # we also send the data that failed during the previous attempt
-                    await self._frontend.send_data(list(self._failed_data) + data)
-                    self._failed_data.clear()
-                except:
-                    # TODO proper exception handling
-                    _LOGGER.warning("Failed to send data", exc_info=True)
-                    # store the data for a later retry attempt
-                    self._failed_data.extend(data)
 
             if self._webcam_callback:
                 webcam_data = self._webcam_callback.get_data()

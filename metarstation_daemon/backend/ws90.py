@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import logging
 
@@ -47,6 +48,7 @@ class WS90SensorBackend(SensorBackend):
     def __init__(self, config, queue: SensorBackendQueue):
         super().__init__(config, queue)
         self.bt_address: str = config['bt_address']
+        self.scanner_sleep_secs: int = config.get('scanner_sleep_secs', 60)
         # TODO passive scan doesn't work without some tricks; it's probably better to just use active scan at regular intervals anyway
         self._scanner = BleakScanner(self._callback,
                                      scanning_mode='active',
@@ -56,18 +58,41 @@ class WS90SensorBackend(SensorBackend):
         self._packet1_received = False
         self._packet2_received = False
         self._latest_data = SensorData()
+        self._data_event = asyncio.Event()
+        self._data_collect_task: asyncio.Task | None = None
 
     async def start(self):
         _LOGGER.debug(f"WS90 scanner for {self.bt_address} starting")
-        await self._scanner.start()
+        self._data_collect_task = asyncio.get_running_loop().create_task(self._collect_data_start())
 
     async def stop(self):
         _LOGGER.debug("WS90 scanner stopping")
-        await self._scanner.stop()
+        # this will trigger the shutdown mechanism in _collect_data_start
+        self._data_event.set()
+        if self._data_collect_task:
+            self._data_collect_task.cancel()
+
+    async def _collect_data_start(self):
+        while True:
+            # start scanning: the callback will trigger the data event when ready
+            await self._scanner.start()
+
+            # wait for the data event from the scanner callback
+            await asyncio.wait_for(self._data_event.wait(), timeout=None)
+            self._data_event.clear()
+
+            if self._packet1_received and self._packet2_received:
+                # data is ready: push to data collector
+                self._push_sensor_value()
+            else:
+                # shutting down
+                break
+
+            # stop scanning and wait for the interval
+            await self._scanner.stop()
+            await asyncio.sleep(self.scanner_sleep_secs)
 
     def _push_sensor_value(self):
-        self._latest_data.timestamp = datetime.datetime.now(datetime.UTC)
-        _LOGGER.info(f"Latest data: {self._latest_data}")
         self.queue.push(self._latest_data)
         # reset buffer object
         self._latest_data = SensorData()
@@ -106,4 +131,8 @@ class WS90SensorBackend(SensorBackend):
                 self._packet2_received = True
 
             if self._packet1_received and self._packet2_received:
-                self._push_sensor_value()
+                self._latest_data.timestamp = datetime.datetime.now(datetime.UTC)
+                # data packet is now ready for collection
+                _LOGGER.info(f"Latest data: {self._latest_data}")
+                # this will trigger the collection loop in _collect_data_start
+                self._data_event.set()

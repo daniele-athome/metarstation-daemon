@@ -1,14 +1,14 @@
-from collections import deque
+import asyncio
 
 from ..data import SensorData, WebcamData
 
 
 class SensorBackendQueue:
     def __init__(self, queue):
-        self._queue: deque[SensorData] = queue
+        self._queue: asyncio.Queue[SensorData] = queue
 
     def push(self, data: SensorData):
-        self._queue.appendleft(data)
+        self._queue.put_nowait(data)
 
 
 class SensorBackend:
