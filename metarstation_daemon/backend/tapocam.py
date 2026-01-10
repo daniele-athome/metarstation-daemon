@@ -29,9 +29,10 @@ async def _print_ffmpeg_logs(stderr):
 
 class TapoStreamer:
 
-    def __init__(self, quality: str, log_callback, tempdir: str, tapo_args: dict):
+    def __init__(self, quality: str, log_callback, connect_callback, tempdir: str, tapo_args: dict):
         self.quality = quality
         self._log_callback = log_callback
+        self._connect_callback = connect_callback
         self._tempdir = tempdir
         self._tapo_args = tapo_args
         self._connect_task: asyncio.Task | None = None
@@ -82,7 +83,9 @@ class TapoStreamer:
             try:
                 self._tapo = await asyncio.get_running_loop().run_in_executor(None, self._create_tapo)
                 self.ready = True
-                _LOGGER.debug('Ready to stream from Tapo camera!')
+
+                if self._connect_callback:
+                    self._connect_callback()
                 break
 
             except OSError as e:
@@ -107,10 +110,11 @@ class TapoWebcamBackend(WebcamBackend):
         self._debug = config.get('debug', False)
         self._tempdir = tempfile.mkdtemp('weather-station')
         self._tapo = TapoStreamer(
-            config.get('quality', 'HD'),
-            self.streamer_log_callback,
-            self._tempdir,
-            {
+            quality=config.get('quality', 'HD'),
+            log_callback=self.streamer_log_callback,
+            connect_callback=self.streamer_connected,
+            tempdir=self._tempdir,
+            tapo_args={
                 'host': config['ip_address'],
                 'user': config['cloud_username'],
                 'password': config['cloud_password'],
@@ -127,10 +131,13 @@ class TapoWebcamBackend(WebcamBackend):
         if self._debug:
             _LOGGER.debug(status)
 
+    def streamer_connected(self):
+        _LOGGER.info('Tapo webcam connected')
+        self._snapshot_task = asyncio.get_running_loop().create_task(self._collect_snapshot_start())
+
     async def start(self):
         _LOGGER.info(f"Tapo webcam starting ({self._tapo.quality} quality)")
         await self._tapo.start()
-        self._snapshot_task = asyncio.get_running_loop().create_task(self._collect_snapshot_start())
 
     async def stop(self):
         _LOGGER.info("Tapo webcam stopping")
@@ -147,18 +154,6 @@ class TapoWebcamBackend(WebcamBackend):
         _LOGGER.debug("Starting webcam snapshot collection")
 
         while not self._shutdown_event.is_set():
-            try:
-                # wait for the shutdown event or the collect interval, whichever comes first
-                await asyncio.wait_for(
-                    self._shutdown_event.wait(),
-                    timeout=self._snapshot_interval_secs - _STREAM_SETTLE_WAIT_SECS
-                )
-            except asyncio.TimeoutError:
-                pass
-
-            if self._shutdown_event.is_set():
-                break
-
             try:
                 if not self._tapo.ready:
                     _LOGGER.debug('Connection to camera not ready, not taking snapshot')
@@ -177,6 +172,8 @@ class TapoWebcamBackend(WebcamBackend):
                 _LOGGER.warning("Error taking snapshot from webcam", exc_info=True)
             finally:
                 await self._tapo.pause_stream()
+
+            await asyncio.sleep(self._snapshot_interval_secs - _STREAM_SETTLE_WAIT_SECS)
 
     async def _take_snapshot(self):
         """
