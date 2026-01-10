@@ -19,6 +19,7 @@ class HTTPDataFrontend(DataFrontend):
         self.push_url: str = config['data_url']
         self.image_url: str = config['image_url']
         self.api_token: str = config['api_token']
+        self.timeout_secs: int = config.get('timeout_secs', 10)
 
     async def setup(self):
         # TODO
@@ -26,7 +27,7 @@ class HTTPDataFrontend(DataFrontend):
 
     async def send_data(self, data: list[SensorData]):
         _LOGGER.debug(f"Sending data: {data}")
-        async with httpx.AsyncClient() as client:
+        async with self._httpclient() as client:
             auth = BearerTokenAuth(self.api_token)
             r = await client.post(self.push_url, json=[x.to_dict() for x in data[-self.DATA_LIMIT:]], auth=auth)
             if r.status_code not in (200, 201):
@@ -35,7 +36,7 @@ class HTTPDataFrontend(DataFrontend):
 
     async def send_webcam(self, data: WebcamData):
         _LOGGER.debug(f"Sending webcam snapshot @ {data.timestamp}")
-        async with httpx.AsyncClient() as client:
+        async with self._httpclient() as client:
             auth = BearerTokenAuth(self.api_token)
             image_url = URL(self.image_url).copy_add_param('timestamp', data.timestamp.isoformat())
             r = await client.post(image_url, content=data.image_data, auth=auth, headers={
@@ -44,6 +45,9 @@ class HTTPDataFrontend(DataFrontend):
             if r.status_code not in (200, 201):
                 # TODO custom exception maybe?
                 raise RuntimeError(f"HTTP request failed with status code {r.status_code}")
+
+    def _httpclient(self):
+        return httpx.AsyncClient(timeout=httpx.Timeout(timeout=self.timeout_secs))
 
 
 class BearerTokenAuth(httpx.Auth):
