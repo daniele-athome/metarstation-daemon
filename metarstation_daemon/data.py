@@ -62,7 +62,7 @@ class SensorData(dict):
 @dataclass(kw_only=True)
 class WebcamData:
 
-    timestamp: datetime.datetime = datetime.datetime.now(datetime.UTC)
+    timestamp: datetime.datetime
     """Webcam snapshot timestamp."""
 
     image_data: bytes

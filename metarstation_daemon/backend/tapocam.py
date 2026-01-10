@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 import shutil
 import subprocess
@@ -213,7 +214,11 @@ class TapoWebcamBackend(WebcamBackend):
             if self._debug:
                 with open(Path(self._tempdir) / "snapshot.jpg", "wb") as f:
                     f.write(snapshot_data)
-            self.callback.update(WebcamData(image_data=snapshot_data, image_type=_IMAGE_TYPE))
+            self.callback.update(WebcamData(
+                timestamp=datetime.datetime.now(datetime.UTC),
+                image_data=snapshot_data,
+                image_type=_IMAGE_TYPE,
+            ))
         else:
             await _print_ffmpeg_logs(self._snapshot_process.stderr)
 
