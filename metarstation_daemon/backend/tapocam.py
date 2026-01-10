@@ -88,8 +88,11 @@ class TapoStreamer:
             except OSError as e:
                 # network error, queue a retry after some time
                 _LOGGER.warning(f'Tapo connect failed! {e}')
-                # TODO exponential backoff?
-                await asyncio.sleep(10)
+                try:
+                    # TODO exponential backoff?
+                    await asyncio.sleep(10)
+                except asyncio.CancelledError:
+                    break
 
     def _create_tapo(self):
         """Called from an executor because the Tapo constructor will block for connecting to the camera."""
@@ -162,10 +165,12 @@ class TapoWebcamBackend(WebcamBackend):
                     continue
 
                 await self._tapo.resume_stream()
-                # we currently don't have a way with pytapo API to check for readiness,
-                # so we just sleep, hoping the stream will be ready by then
-                # TODO is this time enough?
-                await asyncio.sleep(_STREAM_SETTLE_WAIT_SECS)
+                try:
+                    # we currently don't have a way with pytapo API to check for readiness,
+                    # so we just sleep, hoping the stream will be ready by then
+                    await asyncio.sleep(_STREAM_SETTLE_WAIT_SECS)
+                except asyncio.CancelledError:
+                    break
 
                 await self._take_snapshot()
             except:
