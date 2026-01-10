@@ -17,3 +17,4 @@ quality = "HD"
 data_url = "http://localhost:8787/push"
 image_url = "http://localhost:8787/image"
 api_token = "api_token"
+timeout_secs = 10
