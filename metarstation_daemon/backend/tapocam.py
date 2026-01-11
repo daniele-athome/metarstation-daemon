@@ -113,13 +113,14 @@ class TapoStreamer:
                 )
                 if len(devices) > 0:
                     # provide the host to the Tapo constructor and continue with normal connection
-                    self._tapo_args['host'] = devices.keys()[0]
+                    self._tapo_args['host'] = next(iter(devices.keys()))
                     await self.start()
                     break
 
             except asyncio.CancelledError:
                 break
             except:
+                _LOGGER.warning('Error discovering camera', exc_info=True)
                 try:
                     # TODO exponential backoff?
                     await asyncio.sleep(10)
