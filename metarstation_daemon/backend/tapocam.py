@@ -221,7 +221,7 @@ class TapoWebcamBackend(WebcamBackend):
 
                 await self._take_snapshot()
             except asyncio.CancelledError:
-                pass
+                break
             except:
                 _LOGGER.warning("Error taking snapshot from webcam", exc_info=True)
             finally:
