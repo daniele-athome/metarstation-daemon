@@ -3,7 +3,12 @@ bt_address = "08:B9:5F:D4:2D:58"
 scanner_sleep_secs = 30
 
 [webcam]
-ip_address = "192.168.100.161"
+discovery_interface = "wlan0"
+# in most cases, for discovery, credentials are not necessary
+#discovery_username = "discovery_username"
+#discovery_password = "discovery_password"
+# either provide IP address or discovery interface
+#ip_address = "192.168.100.161"
 camera_username = "camera_username"
 camera_password = "camera_password"
 cloud_username = "admin"
