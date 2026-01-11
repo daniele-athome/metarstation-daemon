@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from kasa import Discover as kasa_Discover, Credentials as kasa_Credentials
+
 from pytapo import Tapo
 from pytapo.media_stream.streamer import Streamer
 
@@ -29,11 +31,20 @@ async def _print_ffmpeg_logs(stderr):
 
 class TapoStreamer:
 
-    def __init__(self, quality: str, log_callback, connect_callback, tempdir: str, tapo_args: dict):
+    def __init__(self, quality: str,
+                 log_callback, connect_callback,
+                 tempdir: str,
+                 discovery_interface: str,
+                 discovery_username: str,
+                 discovery_password: str,
+                 tapo_args: dict):
         self.quality = quality
         self._log_callback = log_callback
         self._connect_callback = connect_callback
         self._tempdir = tempdir
+        self._discovery_interface = discovery_interface
+        self._discovery_username = discovery_username
+        self._discovery_password = discovery_password
         self._tapo_args = tapo_args
         self._connect_task: asyncio.Task | None = None
         self._tapo: Tapo | None = None
@@ -42,7 +53,12 @@ class TapoStreamer:
         self.ready = False
 
     async def start(self):
-        self._connect_task = asyncio.get_running_loop().create_task(self._connect())
+        if 'host' in self._tapo_args and self._tapo_args['host'] is not None:
+            self._connect_task = asyncio.get_running_loop().create_task(self._connect())
+        elif self._discovery_interface is not None:
+            self._connect_task = asyncio.get_running_loop().create_task(self._discover())
+        else:
+            raise ValueError('Provide either camera host or discovery interface')
 
     async def stop(self):
         self._shutdown_event.set()
@@ -67,7 +83,7 @@ class TapoStreamer:
 
     async def pause_stream(self):
         if self._streamer:
-            #_LOGGER.debug(f'Pausing stream - status: {self._streamer.currentAction}')
+            # _LOGGER.debug(f'Pausing stream - status: {self._streamer.currentAction}')
             try:
                 if self._streamer.streamProcess:
                     self._streamer.streamProcess.kill()
@@ -78,7 +94,40 @@ class TapoStreamer:
             except:
                 pass
 
+    async def _discover(self):
+        while not self._shutdown_event.set():
+            _LOGGER.debug(f'Discovering camera on interface {self._discovery_interface}')
+            if self._discovery_username and self._discovery_password:
+                credentials = kasa_Credentials(
+                    username=self._discovery_username,
+                    password=self._discovery_password,
+                )
+            else:
+                credentials = None
+
+            try:
+                devices = await kasa_Discover.discover(
+                    interface=self._discovery_interface,
+                    credentials=credentials,
+                    discovery_timeout=10,
+                )
+                if len(devices) > 0:
+                    # provide the host to the Tapo constructor and continue with normal connection
+                    self._tapo_args['host'] = devices.keys()[0]
+                    await self.start()
+                    break
+
+            except asyncio.CancelledError:
+                break
+            except:
+                try:
+                    # TODO exponential backoff?
+                    await asyncio.sleep(10)
+                except asyncio.CancelledError:
+                    break
+
     async def _connect(self):
+        _LOGGER.debug(f'Connecting to camera at address {self._tapo_args["host"]}')
         while not self._shutdown_event.set():
             try:
                 self._tapo = await asyncio.get_running_loop().run_in_executor(None, self._create_tapo)
@@ -106,7 +155,7 @@ class TapoWebcamBackend(WebcamBackend):
 
     def __init__(self, config, callback: WebcamBackendCallback):
         super().__init__(config, callback)
-        self._snapshot_interval_secs = max(config['snapshot_interval_secs'], _STREAM_SETTLE_WAIT_SECS*2)
+        self._snapshot_interval_secs = max(config['snapshot_interval_secs'], _STREAM_SETTLE_WAIT_SECS * 2)
         self._debug = config.get('debug', False)
         self._tempdir = tempfile.mkdtemp('weather-station')
         self._tapo = TapoStreamer(
@@ -114,8 +163,11 @@ class TapoWebcamBackend(WebcamBackend):
             log_callback=self.streamer_log_callback,
             connect_callback=self.streamer_connected,
             tempdir=self._tempdir,
+            discovery_interface=config.get('discovery_interface', None),
+            discovery_username=config.get('discovery_username', None),
+            discovery_password=config.get('discovery_password', None),
             tapo_args={
-                'host': config['ip_address'],
+                'host': config.get('ip_address', None),
                 'user': config['cloud_username'],
                 'password': config['cloud_password'],
                 'cloudPassword': config['cloud_password'],
