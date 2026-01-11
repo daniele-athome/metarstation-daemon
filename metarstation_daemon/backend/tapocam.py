@@ -109,7 +109,7 @@ class TapoStreamer:
                 devices = await kasa_Discover.discover(
                     interface=self._discovery_interface,
                     credentials=credentials,
-                    discovery_timeout=5,
+                    discovery_timeout=10,
                 )
                 if len(devices) > 0:
                     # provide the host to the Tapo constructor and continue with normal connection
