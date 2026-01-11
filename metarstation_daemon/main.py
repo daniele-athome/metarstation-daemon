@@ -115,6 +115,8 @@ class WeatherDaemon:
                     # we also send the data that failed during the previous attempt
                     await self._frontend.send_data([*self._failed_data, data])
                     self._failed_data.clear()
+                except asyncio.CancelledError:
+                    continue
                 except:
                     # TODO proper exception handling
                     _LOGGER.warning("Failed to send data", exc_info=True)
@@ -126,6 +128,8 @@ class WeatherDaemon:
                 if webcam_data:
                     try:
                         await self._frontend.send_webcam(webcam_data)
+                    except asyncio.CancelledError:
+                        continue
                     except:
                         # TODO proper exception handling
                         _LOGGER.warning("Failed to send webcam data", exc_info=True)
