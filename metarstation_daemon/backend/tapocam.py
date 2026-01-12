@@ -140,10 +140,10 @@ class TapoStreamer:
                     break
 
     async def _connect(self):
-        _LOGGER.debug(f'Connecting to camera at address {self._tapo_args["host"]}')
+        address = self._discovered_address if self._discovered_address is not None else self._host
         while not self._shutdown_event.set():
             try:
-                self._tapo = await asyncio.get_running_loop().run_in_executor(None, self._create_tapo)
+                self._tapo = await asyncio.get_running_loop().run_in_executor(None, self._create_tapo, address)
                 self.ready = True
 
                 if self._connect_callback:
@@ -159,10 +159,10 @@ class TapoStreamer:
                 except asyncio.CancelledError:
                     break
 
-    def _create_tapo(self):
+    def _create_tapo(self, address):
         """Called from an executor because the Tapo constructor will block for connecting to the camera."""
         args = dict(self._tapo_args)
-        args['host'] = self._discovered_address if self._discovered_address is not None else self._host
+        args['host'] = address
         return Tapo(**args)
 
 
