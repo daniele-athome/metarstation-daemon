@@ -64,6 +64,8 @@ class WeatherDaemon:
         for sig in (signal.SIGINT, signal.SIGTERM):
             asyncio.get_running_loop().add_signal_handler(sig, functools.partial(sig_handler, sig))
 
+        notify_ready()
+
         # start collecting data from the device
         await self._backend.start()
 
@@ -133,6 +135,16 @@ class WeatherDaemon:
                     except:
                         # TODO proper exception handling
                         _LOGGER.warning("Failed to send webcam data", exc_info=True)
+
+
+def notify_ready():
+    if is_systemd():
+        from . import sdnotify
+        sdnotify.SystemdNotifier().notify("READY=1")
+
+
+def is_systemd():
+    return 'NOTIFY_SOCKET' in os.environ
 
 
 def is_journal_enabled():
