@@ -37,6 +37,7 @@ class TapoStreamer:
                  discovery_interface: str,
                  discovery_username: str,
                  discovery_password: str,
+                 camera_address: str,
                  tapo_args: dict):
         self.quality = quality
         self._log_callback = log_callback
@@ -45,6 +46,8 @@ class TapoStreamer:
         self._discovery_interface = discovery_interface
         self._discovery_username = discovery_username
         self._discovery_password = discovery_password
+        self._host = camera_address
+        self._discovered_address: str | None = None
         self._tapo_args = tapo_args
         self._connect_task: asyncio.Task | None = None
         self._tapo: Tapo | None = None
@@ -53,7 +56,7 @@ class TapoStreamer:
         self.ready = False
 
     async def start(self):
-        if 'host' in self._tapo_args and self._tapo_args['host'] is not None:
+        if self._host is not None or self._discovered_address is not None:
             self._connect_task = asyncio.get_running_loop().create_task(self._connect())
         elif self._discovery_interface is not None:
             self._connect_task = asyncio.get_running_loop().create_task(self._discover())
@@ -62,10 +65,19 @@ class TapoStreamer:
 
     async def stop(self):
         self._shutdown_event.set()
+        await self._reset()
+
+    async def restart(self):
+        await self._reset()
+        await self.start()
+
+    async def _reset(self):
         if self._connect_task:
             self._connect_task.cancel()
+            self._connect_task = None
         await self.pause_stream()
         self.ready = False
+        self._discovered_address = None
 
     async def resume_stream(self):
         _LOGGER.debug('Resuming stream')
@@ -112,8 +124,8 @@ class TapoStreamer:
                     discovery_timeout=10,
                 )
                 if len(devices) > 0:
-                    # provide the host to the Tapo constructor and continue with normal connection
-                    self._tapo_args['host'] = next(iter(devices.keys()))
+                    # store the discovered address and continue with normal connection
+                    self._discovered_address = next(iter(devices.keys()))
                     await self.start()
                     break
 
@@ -149,7 +161,9 @@ class TapoStreamer:
 
     def _create_tapo(self):
         """Called from an executor because the Tapo constructor will block for connecting to the camera."""
-        return Tapo(**self._tapo_args)
+        args = dict(self._tapo_args)
+        args['host'] = self._discovered_address
+        return Tapo(**args)
 
 
 class TapoWebcamBackend(WebcamBackend):
@@ -167,8 +181,8 @@ class TapoWebcamBackend(WebcamBackend):
             discovery_interface=config.get('discovery_interface', None),
             discovery_username=config.get('discovery_username', None),
             discovery_password=config.get('discovery_password', None),
+            camera_address=config.get('ip_address', None),
             tapo_args={
-                'host': config.get('ip_address', None),
                 'user': config['cloud_username'],
                 'password': config['cloud_password'],
                 'cloudPassword': config['cloud_password'],
@@ -220,6 +234,11 @@ class TapoWebcamBackend(WebcamBackend):
                 except asyncio.CancelledError:
                     break
 
+                if not self._stream_changed():
+                    _LOGGER.debug('Stream did not change, trying reconnecting to camera')
+                    await self._tapo.restart()
+                    break
+
                 await self._take_snapshot()
             except asyncio.CancelledError:
                 break
@@ -234,10 +253,6 @@ class TapoWebcamBackend(WebcamBackend):
         """
         ffmpeg -i stream_output.m3u8 -vframes 1 -q:v 10 snapshot.jpg, but with pipes.
         """
-
-        if not self._stream_changed():
-            _LOGGER.debug('Stream did not change, not taking snapshot')
-            return
 
         _LOGGER.debug("Taking snapshot from webcam")
 
