@@ -162,7 +162,7 @@ class TapoStreamer:
     def _create_tapo(self):
         """Called from an executor because the Tapo constructor will block for connecting to the camera."""
         args = dict(self._tapo_args)
-        args['host'] = self._discovered_address
+        args['host'] = self._discovered_address if self._discovered_address is not None else self._host
         return Tapo(**args)
 
 
