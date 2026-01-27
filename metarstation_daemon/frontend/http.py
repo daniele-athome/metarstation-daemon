@@ -35,7 +35,7 @@ class HTTPDataFrontend(DataFrontend):
                 raise RuntimeError(f"HTTP request failed with status code {r.status_code}")
 
     async def send_webcam(self, data: WebcamData):
-        _LOGGER.debug(f"Sending webcam snapshot @ {data.timestamp}")
+        _LOGGER.debug(f"Sending webcam snapshot @ {data.expire}")
         async with self._httpclient() as client:
             auth = BearerTokenAuth(self.api_token)
             image_url = URL(self.image_url).copy_add_param('timestamp', data.expire.isoformat())
