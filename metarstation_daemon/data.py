@@ -62,8 +62,8 @@ class SensorData(dict):
 @dataclass(kw_only=True)
 class WebcamData:
 
-    timestamp: datetime.datetime
-    """Webcam snapshot timestamp."""
+    expire: datetime.datetime
+    """Webcam snapshot expiration."""
 
     image_data: bytes
     """Snapshot image data."""

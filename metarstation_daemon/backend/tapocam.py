@@ -287,7 +287,8 @@ class TapoWebcamBackend(WebcamBackend):
                 with open(Path(self._tempdir) / "snapshot.jpg", "wb") as f:
                     f.write(snapshot_data)
             self.callback.update(WebcamData(
-                timestamp=datetime.datetime.now(datetime.UTC),
+                # expiration time is until the next snapshot
+                expire=datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=self._snapshot_interval_secs),
                 image_data=snapshot_data,
                 image_type=_IMAGE_TYPE,
             ))
