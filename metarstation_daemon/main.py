@@ -91,12 +91,23 @@ class WeatherDaemon:
         _LOGGER.debug("Starting data collection")
 
         while not self._shutdown_event.is_set():
-            task_data_queue: asyncio.Future[SensorData] = asyncio.create_task(self._data_queue.get())
-            task_webcam_data: asyncio.Future[WebcamData] = asyncio.create_task(self._webcam_callback.get_data())
-            task_shutdown_event = asyncio.create_task(self._shutdown_event.wait())
+            # tasks in this list will be waited for
+            waiting_tasks = []
 
+            task_data_queue: asyncio.Future[SensorData] = asyncio.create_task(self._data_queue.get())
+            waiting_tasks.append(task_data_queue)
+
+            task_webcam_data: asyncio.Future[WebcamData] | None = None
+            if self._webcam:
+                task_webcam_data: asyncio.Future[WebcamData] = asyncio.create_task(self._webcam_callback.get_data())
+                waiting_tasks.append(task_webcam_data)
+
+            task_shutdown_event = asyncio.create_task(self._shutdown_event.wait())
+            waiting_tasks.append(task_shutdown_event)
+
+            # wait for the first data available (or the shutdown event)
             done_tasks, pending_tasks = await asyncio.wait(
-                [task_data_queue, task_webcam_data, task_shutdown_event],
+                waiting_tasks,
                 return_when=asyncio.FIRST_COMPLETED
             )
 
