@@ -87,6 +87,7 @@ class WeatherDaemon:
         if self._webcam:
             await self._webcam.stop()
 
+    # TODO handle exceptions otherwise we get silent fails
     async def _collect_data_start(self):
         _LOGGER.debug("Starting data collection")
 
