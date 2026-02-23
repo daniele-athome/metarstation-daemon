@@ -86,6 +86,7 @@ class WS90SensorBackend(SensorBackend):
                 self._push_sensor_value()
             else:
                 # shutting down
+                await self._scanner.stop()
                 break
 
             # stop scanning and wait for the interval
