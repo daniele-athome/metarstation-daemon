@@ -84,10 +84,8 @@ class WS90SensorBackend(SensorBackend):
 
                 if self._packet1_received and self._packet2_received:
                     # data is ready: push to data collector
-                    _LOGGER.debug("Pushing data!")
                     self._push_sensor_value()
                 else:
-                    _LOGGER.debug("Aborting!")
                     # shutting down
                     await self._scanner.stop()
                     break
