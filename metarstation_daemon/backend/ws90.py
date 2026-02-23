@@ -72,28 +72,35 @@ class WS90SensorBackend(SensorBackend):
         if self._data_collect_task:
             self._data_collect_task.cancel()
 
-    # TODO handle exceptions otherwise we get silent fails
     async def _collect_data_start(self):
         while True:
-            # start scanning: the callback will trigger the data event when ready
-            await self._scanner.start()
+            try:
+                # start scanning: the callback will trigger the data event when ready
+                await self._scanner.start()
 
-            # wait for the data event from the scanner callback
-            await asyncio.wait_for(self._data_event.wait(), timeout=None)
-            self._data_event.clear()
+                # wait for the data event from the scanner callback
+                await asyncio.wait_for(self._data_event.wait(), timeout=None)
+                self._data_event.clear()
 
-            if self._packet1_received and self._packet2_received:
-                # data is ready: push to data collector
-                _LOGGER.debug("Pushing data!")
-                self._push_sensor_value()
-            else:
-                _LOGGER.debug("Aborting!")
-                # shutting down
+                if self._packet1_received and self._packet2_received:
+                    # data is ready: push to data collector
+                    _LOGGER.debug("Pushing data!")
+                    self._push_sensor_value()
+                else:
+                    _LOGGER.debug("Aborting!")
+                    # shutting down
+                    await self._scanner.stop()
+                    break
+
+                # stop scanning and wait for the interval
                 await self._scanner.stop()
+            except asyncio.CancelledError:
+                # we've been canceled, shutting down
                 break
+            except:
+                _LOGGER.error("Unexpected error", exc_info=True)
+                # TODO proper error handling
 
-            # stop scanning and wait for the interval
-            await self._scanner.stop()
             await asyncio.sleep(self.scanner_sleep_secs)
 
     def _push_sensor_value(self):

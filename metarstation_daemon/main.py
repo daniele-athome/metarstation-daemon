@@ -87,67 +87,72 @@ class WeatherDaemon:
         if self._webcam:
             await self._webcam.stop()
 
-    # TODO handle exceptions otherwise we get silent fails
     async def _collect_data_start(self):
         _LOGGER.debug("Starting data collection")
 
         while not self._shutdown_event.is_set():
-            # tasks in this list will be waited for
-            waiting_tasks = []
+            try:
+                # tasks in this list will be waited for
+                waiting_tasks = []
 
-            task_data_queue: asyncio.Future[SensorData] = asyncio.create_task(self._data_queue.get())
-            waiting_tasks.append(task_data_queue)
+                task_data_queue: asyncio.Future[SensorData] = asyncio.create_task(self._data_queue.get())
+                waiting_tasks.append(task_data_queue)
 
-            task_webcam_data: asyncio.Future[WebcamData] | None = None
-            if self._webcam:
-                task_webcam_data: asyncio.Future[WebcamData] = asyncio.create_task(self._webcam_callback.get_data())
-                waiting_tasks.append(task_webcam_data)
+                task_webcam_data: asyncio.Future[WebcamData] | None = None
+                if self._webcam:
+                    task_webcam_data: asyncio.Future[WebcamData] = asyncio.create_task(self._webcam_callback.get_data())
+                    waiting_tasks.append(task_webcam_data)
 
-            task_shutdown_event = asyncio.create_task(self._shutdown_event.wait())
-            waiting_tasks.append(task_shutdown_event)
+                task_shutdown_event = asyncio.create_task(self._shutdown_event.wait())
+                waiting_tasks.append(task_shutdown_event)
 
-            # wait for the first data available (or the shutdown event)
-            done_tasks, pending_tasks = await asyncio.wait(
-                waiting_tasks,
-                return_when=asyncio.FIRST_COMPLETED
-            )
+                # wait for the first data available (or the shutdown event)
+                done_tasks, pending_tasks = await asyncio.wait(
+                    waiting_tasks,
+                    return_when=asyncio.FIRST_COMPLETED
+                )
 
-            # cancel any pending tasks
-            [t.cancel() for t in pending_tasks]
-            # return_exceptions=True - prevent raise of asyncio.CancelledError
-            await asyncio.gather(*pending_tasks, return_exceptions=True)
+                # cancel any pending tasks
+                [t.cancel() for t in pending_tasks]
+                # return_exceptions=True - prevent raise of asyncio.CancelledError
+                await asyncio.gather(*pending_tasks, return_exceptions=True)
 
-            if self._shutdown_event.is_set():
-                # exit immediately
-                break
+                if self._shutdown_event.is_set():
+                    # exit immediately
+                    break
 
-            if task_data_queue in done_tasks:
-                # _LOGGER.debug(f"Collecting data")
-                # we got sensor data!
-                data = task_data_queue.result()
-                try:
-                    # we also send the data that failed during the previous attempt
-                    await self._frontend.send_data([*self._failed_data, data])
-                    self._failed_data.clear()
-                except asyncio.CancelledError:
-                    continue
-                except:
-                    # TODO proper exception handling
-                    _LOGGER.warning("Failed to send data", exc_info=True)
-                    # store the data for a later retry attempt
-                    self._failed_data.append(data)
-
-            if task_webcam_data in done_tasks:
-                webcam_data = task_webcam_data.result()
-                if webcam_data:
+                if task_data_queue in done_tasks:
+                    # _LOGGER.debug(f"Collecting data")
+                    # we got sensor data!
+                    data = task_data_queue.result()
                     try:
-                        await self._frontend.send_webcam(webcam_data)
+                        # we also send the data that failed during the previous attempt
+                        await self._frontend.send_data([*self._failed_data, data])
+                        self._failed_data.clear()
                     except asyncio.CancelledError:
                         continue
                     except:
                         # TODO proper exception handling
-                        _LOGGER.warning("Failed to send webcam data", exc_info=True)
+                        _LOGGER.warning("Failed to send data", exc_info=True)
+                        # store the data for a later retry attempt
+                        self._failed_data.append(data)
 
+                if task_webcam_data in done_tasks:
+                    webcam_data = task_webcam_data.result()
+                    if webcam_data:
+                        try:
+                            await self._frontend.send_webcam(webcam_data)
+                        except asyncio.CancelledError:
+                            continue
+                        except:
+                            # TODO proper exception handling
+                            _LOGGER.warning("Failed to send webcam data", exc_info=True)
+            except asyncio.CancelledError:
+                # we've been canceled, shutting down
+                pass
+            except:
+                _LOGGER.error("Unexpected error", exc_info=True)
+                # TODO proper error handling
 
 def notify_ready():
     if is_systemd():
