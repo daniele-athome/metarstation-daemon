@@ -4,6 +4,7 @@ import functools
 import logging
 import os
 import signal
+import sys
 import tomllib
 from collections import deque
 from io import BufferedReader
@@ -168,7 +169,7 @@ def is_journal_enabled():
     return 'JOURNAL_STREAM' in os.environ
 
 
-def main(args):
+def main() -> None:
     # TODO proper logging configuration
     if is_journal_enabled():
         formatter = "%(name)s %(levelname)s - %(message)s"
@@ -180,4 +181,4 @@ def main(args):
     # logging.getLogger("httpx").setLevel(logging.DEBUG)
     # logging.getLogger("httpcore").setLevel(logging.DEBUG)
 
-    asyncio.run(WeatherDaemon(args).run())
+    asyncio.run(WeatherDaemon(sys.argv).run())
