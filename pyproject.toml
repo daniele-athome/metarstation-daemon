@@ -11,6 +11,8 @@ dependencies = [
     "httpx==0.28.1",
     "pytapo>=3.3.54,<3.4.0",
     "python-kasa==0.10.2",
+    # actually a workaround to avoid looking through all versions of habluetooth
+    "habluetooth<6.8"
 ]
 
 [project.scripts]
