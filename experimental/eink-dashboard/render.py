@@ -42,8 +42,8 @@ class Ephem:
 
 @dataclass
 class Stamp:
-    observed: str = DASH
-    updated: str = DASH
+    observed: str = DASH + ':' + DASH
+    updated: str = DASH + ':' + DASH
 
 
 @dataclass
