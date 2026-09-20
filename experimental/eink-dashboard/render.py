@@ -55,7 +55,6 @@ class Board:
     ephem: Ephem = field(default_factory=Ephem)
     stamp: Stamp = field(default_factory=Stamp)
 
-    # con default a "--" quando il dato manca
     verdict: str | None = None
     sky: str | None = None
     temp: str | None = None
