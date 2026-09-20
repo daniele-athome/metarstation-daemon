@@ -105,7 +105,7 @@ def demo_empty() -> Board:
         date="dom 20 settembre 2026",
         clock="14:35",
         ephem=Ephem("07:01", "19:24", "19:52", "5h 17m"),
-        stamp=Stamp(observed=DASH, updated="14:35"),
+        stamp=Stamp(updated="14:35"),
     )
 
 
