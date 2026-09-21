@@ -1,14 +1,17 @@
+import datetime
 import io
 import logging
+import math
 import os
 import subprocess
 import tempfile
 from dataclasses import asdict
+from zoneinfo import ZoneInfo
 
 from PIL import Image
 from weasyprint import HTML
 
-from .template import load_template, Board, Ephem, Wind, Stamp
+from .template import load_template, Board, Ephem, Wind, Stamp, Runway
 from ..data import SensorData
 
 _LOGGER = logging.getLogger(__name__)
@@ -20,6 +23,67 @@ _ROTATE_TRANSPOSE = {
     270: Image.ROTATE_90,
 }
 
+# date names are hard-coded to avoid depending on the system locale
+# TODO move this elsewhere
+_WEEKDAYS_IT = ("lun", "mar", "mer", "gio", "ven", "sab", "dom")
+# TODO move this elsewhere
+_MONTHS_IT = (
+    "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
+    "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
+)
+# 16-point compass rose, one sector every 22.5 degrees
+# TODO move this elsewhere
+_COMPASS_IT = (
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO",
+)
+
+_MS_TO_KMH = 3.6
+_FEET_TO_METERS = 0.3048
+
+# ISA constants for reducing the station pressure to sea level
+_ISA_SEA_LEVEL_TEMP = 288.15  # K
+_ISA_LAPSE_RATE = 0.0065  # K/m
+_ISA_EXPONENT = 5.25588  # g * M / (R * L)
+
+
+def _qnh_from_station_pressure(pressure: float, elevation: float) -> float:
+    """
+    Reduces the station pressure (i.e., what the barometer reads, also known as QFE)
+    to sea level according to the International Standard Atmosphere, which is what
+    altimeters are calibrated against. Elevation is in meters.
+    """
+    return pressure * (1 - (_ISA_LAPSE_RATE * elevation) / _ISA_SEA_LEVEL_TEMP) ** -_ISA_EXPONENT
+
+
+def _format_qnh(pressure: float | None, elevation: float) -> str | None:
+    """QNH is always rounded down to the whole hPa, as per aviation convention."""
+    if pressure is None:
+        return None
+    return str(math.floor(_qnh_from_station_pressure(pressure, elevation)))
+
+
+def _format_date_it(dt: datetime.datetime) -> str:
+    """Formats a date the Italian way, e.g. "dom 20 settembre 2026"."""
+    return f"{_WEEKDAYS_IT[dt.weekday()]} {dt.day} {_MONTHS_IT[dt.month - 1]} {dt.year}"
+
+
+def _format_time(dt: datetime.datetime) -> str:
+    return dt.strftime("%H:%M")
+
+
+def _format_number(value: float | None, decimals: int = 0) -> str | None:
+    """Rounds a value for display, None (i.e., unavailable) passes through."""
+    if value is None:
+        return None
+    if decimals <= 0:
+        return str(round(value))
+    return f"{value:.{decimals}f}"
+
+
+def _compass_point(degrees: int) -> str:
+    return _COMPASS_IT[round((degrees % 360) / 22.5) % 16]
+
 
 class StaticDashboardGenerator:
     """Warning: this class does blocking I/O!!"""
@@ -28,6 +92,12 @@ class StaticDashboardGenerator:
         self.image_path = os.path.abspath(config["image_path"])
         # TODO one day we'll have templates
         # self.template_name = ...
+        self.site = str(config.get("site", ""))
+        self.runway_rotation = int(config.get("runway_rotation", 0)) % 360
+        # airfield elevation, configured in feet but used in meters
+        self.elevation = float(config.get("elevation_ft", 0)) * _FEET_TO_METERS
+        # None means the system local timezone
+        self.timezone = ZoneInfo(config["timezone"]) if "timezone" in config else None
         self.width = int(config.get("width", 800))
         self.height = int(config.get("height", 600))
         self.rotate = int(config.get("rotate", 90)) % 360
@@ -59,24 +129,57 @@ class StaticDashboardGenerator:
                 pass
             raise
 
-    def generate_dashboard(self, data: SensorData):
-        # TODO translate SensorData into a Board object
-        board = Board(
-            site="Aviosuperficie Valle del Ticino",
-            date="dom 20 settembre 2026",
-            clock="14:35",
+    def _to_local(self, dt: datetime.datetime) -> datetime.datetime:
+        # astimezone(None) converts to the system local timezone
+        return dt.astimezone(self.timezone)
+
+    def _build_wind(self, data: SensorData) -> Wind:
+        # 1.1 m/s roughly equivalent to 4 km/h
+        # TODO use constant or convert from km/h
+        if data.wind_direction is None or data.wind_speed is None or data.wind_speed < 1.1:
+            dir_text = None
+            # no direction, no arrow
+            rotation = None
+        else:
+            direction = data.wind_direction % 360
+            dir_text = f"da {direction}° · {_compass_point(direction)}"
+            # the arrow points where the wind blows to, i.e., the opposite of where it comes from
+            rotation = (direction + 180) % 360
+
+        return Wind(
+            speed=_format_number(data.wind_speed * _MS_TO_KMH if data.wind_speed is not None else None),
+            gust=_format_number(data.gust_speed * _MS_TO_KMH if data.gust_speed is not None else None),
+            dir_text=dir_text,
+            rotation=rotation,
+        )
+
+    def _build_board(self, data: SensorData) -> Board:
+        observed = self._to_local(data.timestamp)
+        updated = self._to_local(datetime.datetime.now(datetime.UTC))
+
+        return Board(
+            site=self.site,
+            date=_format_date_it(updated),
+            clock=_format_time(updated),
+            runway=Runway(rotation=self.runway_rotation),
+            # TODO compute the ephemerides
             ephem=Ephem("07:01", "19:24", "19:52", "5h 17m"),
-            stamp=Stamp(observed="14:30", updated="14:35"),
+            stamp=Stamp(observed=_format_time(observed), updated=_format_time(updated)),
+            # TODO compute the verdict and the sky conditions
             verdict="Buone condizioni",
             sky="Parzialmente nuvoloso",
-            temp="18.4", qnh="1016", dew="11.2", rh="63", clouds="40", vis="18",
-            wind=Wind(speed="14", gust="26", dir_text="da 270° · O", rotation=90),
+            temp=_format_number(data.temperature, 1),
+            qnh=_format_qnh(data.pressure, self.elevation),
+            dew=_format_number(data.dew_point, 1),
+            rh=_format_number(data.humidity),
+            # TODO cloud coverage and visibility are not sensor data
+            clouds=None,
+            vis=None,
+            wind=self._build_wind(data),
         )
-        # board = Board(
-        #     site="Aviosuperficie Valle del Ticino",
-        #     date="dom 20 settembre 2026",
-        #     clock="14:35",
-        # )
+
+    def generate_dashboard(self, data: SensorData):
+        board = self._build_board(data)
         html = self.template.render(**asdict(board))
         img = self._rasterizer.process(html, self.width, self.height, self.rotate)
         self._write_atomic(img)

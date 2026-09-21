@@ -27,4 +27,9 @@ timeout_secs = 10
 
 [dashboard]
 image_path = "metar-dashboard-eink.png"
+rotate = 0
+site = "Aviosuperficie Gallicano"
+runway_rotation = 140
+elevation_ft = 558
+timezone = "Europe/Rome"
 # TODO config for the template itself
