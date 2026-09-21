@@ -100,7 +100,10 @@ def png_size(path: Path) -> tuple[int, int]:
 
 
 def render_png(board: Board, path: Path) -> None:
-    doc = HTML(string=render_html(board), base_url=str(HERE)).render()
+    html_text = render_html(board)
+    with open(path.with_suffix(".html"), "w") as f:
+        f.write(html_text)
+    doc = HTML(string=html_text, base_url=str(HERE)).render()
     if len(doc.pages) != 1:
         raise RuntimeError(
             f"something went wrong: {len(doc.pages)} pages instead of 1. Please check rendering."
