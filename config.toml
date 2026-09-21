@@ -1,4 +1,5 @@
 [backend]
+module = "ws90.WS90SensorBackend"
 bt_address = "08:B9:5F:D4:2D:58"
 scanner_sleep_secs = 30
 

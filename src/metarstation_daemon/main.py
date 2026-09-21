@@ -12,7 +12,7 @@ from typing import BinaryIO, IO
 
 from .backend.interface import SensorBackend, SensorBackendQueue, WebcamBackend, WebcamBackendCallback
 from .backend.tapocam import TapoWebcamBackend
-from .backend.ws90 import WS90SensorBackend
+from .backend import create_instance as create_backend_instance
 from .data import SensorData, WebcamData
 from .frontend.http import HTTPDataFrontend
 from .frontend.interface import DataFrontend
@@ -42,7 +42,10 @@ class WeatherDaemon:
 
         # sensor backend
         self._data_queue = asyncio.Queue(maxsize=DATA_QUEUE_LIMIT)
-        self._backend: SensorBackend = WS90SensorBackend(self.config['backend'], SensorBackendQueue(self._data_queue))
+        self._backend: SensorBackend = create_backend_instance(
+            self.config['backend']['module'],
+            self.config['backend'],
+            SensorBackendQueue(self._data_queue))
 
         # webcam backend
         self._webcam: WebcamBackend | None = None
