@@ -13,7 +13,7 @@ from typing import BinaryIO, IO
 from .backend import create_instance as create_backend_instance
 from .backend.interface import SensorBackend, SensorBackendQueue, WebcamBackend, WebcamBackendCallback
 from .backend.tapocam import TapoWebcamBackend
-from .backend import create_instance as create_backend_instance
+from .dashboard import StaticDashboardGenerator
 from .data import SensorData, WebcamData
 from .frontend.http import HTTPDataFrontend
 from .frontend.interface import DataFrontend
@@ -58,8 +58,14 @@ class WeatherDaemon:
         # data upload frontend
         self._frontend: DataFrontend = HTTPDataFrontend(self.config['frontend'])
 
+        # static dashboard generator
+        self._dashboard: StaticDashboardGenerator | None = None
+        if 'dashboard' in self.config:
+            self._dashboard = StaticDashboardGenerator(self.config['dashboard'])
+
         self._shutdown_event = asyncio.Event()
         self._failed_data: deque[SensorData] = deque(maxlen=FAILED_QUEUE_LIMIT)
+        self._dashboard_task = None
 
     async def run(self):
         def sig_handler(code):
@@ -91,6 +97,10 @@ class WeatherDaemon:
         await self._backend.stop()
         if self._webcam:
             await self._webcam.stop()
+        if self._dashboard_task:
+            # TODO resilience test
+            self._dashboard_task.cancel()
+            await self._dashboard_task
 
     async def _collect_data_start(self):
         _LOGGER.debug("Starting data collection")
@@ -131,6 +141,16 @@ class WeatherDaemon:
                     # we got sensor data!
                     data = task_data_queue.result()
                     try:
+                        if self._dashboard:
+                            # cancel the previous job
+                            if self._dashboard_task:
+                                self._dashboard_task.cancel()
+
+                            # create background job for generating a static dashboard
+                            self._dashboard_task = asyncio.create_task(
+                                self._generate_dashboard(data)
+                            )
+
                         # we also send the data that failed during the previous attempt
                         await self._frontend.send_data([*self._failed_data, data])
                         self._failed_data.clear()
@@ -158,6 +178,13 @@ class WeatherDaemon:
             except:
                 _LOGGER.error("Unexpected error", exc_info=True)
                 # TODO proper error handling
+
+    async def _generate_dashboard(self, data: SensorData):
+        try:
+            return await asyncio.to_thread(self._dashboard.generate_dashboard, data)
+        except:
+            _LOGGER.error("Error generating dashboard", exc_info=True)
+
 
 def notify_ready():
     if is_systemd():

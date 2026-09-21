@@ -3,14 +3,6 @@
 <head>
 <meta charset="utf-8">
 <title>Meteo aviosuperficie - 800x600 e-ink</title>
-<!--
-  Template Jinja2. Il template non calcola nulla: riceve stringhe gia' formattate
-  e un paio di rotazioni in gradi. Vedi render.py per il view model.
-
-  Filtro 'dash': sostituisce None e stringa vuota con '--'. NON usare il filtro
-  'default' di Jinja con boolean=true: considererebbe mancante anche lo zero
-  (vento 0 km/h, copertura 0%, temperatura 0.0).
--->
 <style>
   @page { size: 800px 600px; margin: 0; }
   :root{
@@ -33,12 +25,11 @@
   }
   .board{
     width:800px;height:600px;overflow:hidden;
-    display:flex;flex-direction:column;
   }
 
-  /* ---------- intestazione ---------- */
+  /* ---------- header ---------- */
   .head{
-    height:56px;flex:0 0 56px;
+    height:58px;
     display:flex;align-items:center;
     padding:0 var(--pad);
     border-bottom:2px solid var(--ink);
@@ -53,9 +44,9 @@
   .when .date{font-size:19px;color:var(--ink-soft);line-height:1;}
   .when .clock{font-size:34px;font-weight:700;line-height:1;}
 
-  /* ---------- fascia verdetto ---------- */
+  /* ---------- verdict box ---------- */
   .verdict{
-    height:92px;flex:0 0 92px;
+    height:92px;
     background:var(--ink);color:var(--paper);
     display:flex;align-items:center;justify-content:space-between;
     padding:0 var(--pad);box-sizing:border-box;
@@ -66,10 +57,10 @@
     max-width:300px;
   }
 
-  /* ---------- corpo ---------- */
-  .body{flex:1 1 auto;display:flex;min-height:0;}
+  /* ---------- body ---------- */
+  .body{height:374px;display:flex;}
 
-  /* vento */
+  /* wind */
   .wind{
     flex:0 0 288px;box-sizing:border-box;
     border-right:2px solid var(--ink);
@@ -89,12 +80,11 @@
     border:2px solid var(--ink);
   }
 
-  /* griglia valori */
+  /* other sensor values */
   .vals{
     flex:1 1 auto;box-sizing:border-box;
-    display:flex;flex-direction:column;
   }
-  .row{display:flex;flex:1 1 0;}
+  .row{display:flex;height:186.5px;}   /* 186.5 + (186.5 + 1 di bordo) = 374 */
   .row + .row{border-top:1px solid var(--rule);}
   .cell{
     flex:1 1 0;box-sizing:border-box;
@@ -109,9 +99,9 @@
   .cell.lead .k{font-size:24px;margin-bottom:8px;}
   .cell.lead{flex:1.35 1 0;}
 
-  /* ---------- effemeridi ---------- */
+  /* ---------- ephemerides ---------- */
   .ephem{
-    height:74px;flex:0 0 74px;box-sizing:border-box;
+    height:76px;box-sizing:border-box;
     background:var(--band);
     border-top:2px solid var(--ink);
     display:flex;align-items:center;
@@ -147,26 +137,22 @@
 
     <div class="wind">
       <svg class="rose" width="232" height="232" viewBox="0 0 232 232">
-        <!-- Coordinate in pixel reali: viewBox = dimensione a schermo (scala 1:1),
-             cosi' gli stroke-width dichiarati sono i pixel che finiscono nel PNG.
-             Centro della rosa: (116, 116). -->
-
-        <!-- pista: asse lungo la QFU, disegnata sotto la rosa -->
+        <!-- runway: axis along the QFU, drawn below the wind rose -->
         <rect x="101" y="12" width="30" height="208"
               fill="#e6e6e6" stroke="#000" stroke-width="2"
               transform="rotate({{ runway.rotation }} 116 116)"/>
-        <!-- cerchio esterno -->
+        <!-- outer circle -->
         <circle cx="116" cy="116" r="96.5" fill="none" stroke="#000" stroke-width="3"/>
         <circle cx="116" cy="116" r="65"   fill="none" stroke="#c8c8c8" stroke-width="1"/>
 
-        <!-- tacche cardinali -->
+        <!-- notches for cardinal points -->
         <g stroke="#000" stroke-width="3">
           <line x1="116"   y1="19.5"  x2="116" y2="40"/>
           <line x1="212.5" y1="116"   x2="192" y2="116"/>
           <line x1="116"   y1="212.5" x2="116" y2="192"/>
           <line x1="19.5"  y1="116"   x2="40"  y2="116"/>
         </g>
-        <!-- tacche intermedie ogni 30 gradi -->
+        <!-- notches each 30 degrees -->
         <g stroke="#8a8a8a" stroke-width="2">
           <line x1="164.26" y1="32.48"  x2="158.69" y2="41.76"/>
           <line x1="199.52" y1="67.74"  x2="190.24" y2="73.31"/>
@@ -178,7 +164,7 @@
           <line x1="67.74"  y1="32.48"  x2="73.31"  y2="41.76"/>
         </g>
 
-        <!-- cardinali -->
+        <!-- cardinal points -->
         <g font-family="DejaVu Sans Condensed, DejaVu Sans, sans-serif" font-size="17.6" font-weight="700" fill="#000" text-anchor="middle">
           <text x="116"   y="14.85">N</text>
           <text x="225.5" y="122.5">E</text>
@@ -186,9 +172,6 @@
           <text x="6.5"   y="122.5">O</text>
         </g>
 
-        <!-- Convenzione aeronautica: la cuspide indica dove va il vento.
-             rotation = (direzione_da + 180) mod 360, calcolata nel view model.
-             Senza direzione la cuspide non viene disegnata affatto. -->
         {%- if wind.rotation is not none %}
         <g transform="rotate({{ wind.rotation }} 116 116)">
           <path d="M116 51.04 L141.61 175.67 L116 156.74 L90.39 175.67 Z" fill="#000" stroke="#fff" stroke-width="2" stroke-linejoin="miter" stroke-miterlimit="10"/>
@@ -239,23 +222,23 @@
   <div class="ephem">
     <div class="item">
       <div class="k">Alba</div>
-      <div class="v" id="sunrise">{{ ephem.sunrise }}</div>
+      <div class="v" id="sunrise">{{ ephem.sunrise | dash }}</div>
     </div>
     <div class="item">
       <div class="k">Tramonto</div>
-      <div class="v" id="sunset">{{ ephem.sunset }}</div>
+      <div class="v" id="sunset">{{ ephem.sunset | dash }}</div>
     </div>
     <div class="item">
       <div class="k">Crepuscolo civile</div>
-      <div class="v" id="twilight">{{ ephem.twilight }}</div>
+      <div class="v" id="twilight">{{ ephem.twilight | dash }}</div>
     </div>
     <div class="item">
       <div class="k">Luce residua</div>
-      <div class="v" id="daylight">{{ ephem.daylight }}</div>
+      <div class="v" id="daylight">{{ ephem.daylight | dash }}</div>
     </div>
     <div class="stamp">
-      rilevazione {{ stamp.observed }}<br>
-      aggiornato {{ stamp.updated }}
+      rilevazione {{ stamp.observed | dash_time }}<br>
+      aggiornato {{ stamp.updated | dash_time }}
     </div>
   </div>
 

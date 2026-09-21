@@ -1,5 +1,5 @@
 [backend]
-module = "ws90.WS90SensorBackend"
+module = "dummy.DummySensorBackend"
 bt_address = "08:B9:5F:D4:2D:58"
 scanner_sleep_secs = 30
 
@@ -24,3 +24,7 @@ data_url = "http://localhost:8787/push"
 image_url = "http://localhost:8787/image"
 api_token = "api_token"
 timeout_secs = 10
+
+[dashboard]
+image_path = "metar-dashboard-eink.png"
+# TODO config for the template itself
