@@ -8,9 +8,9 @@ BATTERY_VALUE_AC = -1
 """Battery value when AC is connected."""
 
 
-@dataclass(kw_only=True)
 @dataclass_json
-class SensorData(dict):
+@dataclass(kw_only=True)
+class SensorData:
 
     timestamp: datetime.datetime = field(
         metadata=config(
@@ -18,7 +18,7 @@ class SensorData(dict):
             decoder=datetime.datetime.fromisoformat,
             mm_field=fields.DateTime(format='iso')
         ),
-        default=datetime.datetime.now(datetime.UTC),
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
     )
     """Sensor reading timestamp."""
 
