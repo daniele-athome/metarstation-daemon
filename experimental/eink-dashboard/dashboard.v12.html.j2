@@ -31,14 +31,17 @@
     -webkit-font-smoothing:none;
     font-variant-numeric:tabular-nums;
   }
+  /* Le quattro fasce sono in flusso normale, NON flex: in WeasyPrint i flex
+     annidati moltiplicano i passaggi di layout (misurato: ~6x piu' lento).
+     Altezze fisse, con box-sizing:border-box (bordi inclusi):
+       head 58 + verdict 92 + body 374 + ephem 76 = 600                     */
   .board{
     width:800px;height:600px;overflow:hidden;
-    display:flex;flex-direction:column;
   }
 
   /* ---------- intestazione ---------- */
   .head{
-    height:56px;flex:0 0 56px;
+    height:58px;
     display:flex;align-items:center;
     padding:0 var(--pad);
     border-bottom:2px solid var(--ink);
@@ -55,7 +58,7 @@
 
   /* ---------- fascia verdetto ---------- */
   .verdict{
-    height:92px;flex:0 0 92px;
+    height:92px;
     background:var(--ink);color:var(--paper);
     display:flex;align-items:center;justify-content:space-between;
     padding:0 var(--pad);box-sizing:border-box;
@@ -67,7 +70,7 @@
   }
 
   /* ---------- corpo ---------- */
-  .body{flex:1 1 auto;display:flex;min-height:0;}
+  .body{height:374px;display:flex;}
 
   /* vento */
   .wind{
@@ -92,9 +95,8 @@
   /* griglia valori */
   .vals{
     flex:1 1 auto;box-sizing:border-box;
-    display:flex;flex-direction:column;
   }
-  .row{display:flex;flex:1 1 0;}
+  .row{display:flex;height:186.5px;}   /* 186.5 + (186.5 + 1 di bordo) = 374 */
   .row + .row{border-top:1px solid var(--rule);}
   .cell{
     flex:1 1 0;box-sizing:border-box;
@@ -111,7 +113,7 @@
 
   /* ---------- effemeridi ---------- */
   .ephem{
-    height:74px;flex:0 0 74px;box-sizing:border-box;
+    height:76px;box-sizing:border-box;
     background:var(--band);
     border-top:2px solid var(--ink);
     display:flex;align-items:center;
