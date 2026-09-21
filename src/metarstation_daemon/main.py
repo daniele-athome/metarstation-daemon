@@ -10,6 +10,7 @@ from collections import deque
 from io import BufferedReader
 from typing import BinaryIO, IO
 
+from .backend import create_instance as create_backend_instance
 from .backend.interface import SensorBackend, SensorBackendQueue, WebcamBackend, WebcamBackendCallback
 from .backend.tapocam import TapoWebcamBackend
 from .backend import create_instance as create_backend_instance
