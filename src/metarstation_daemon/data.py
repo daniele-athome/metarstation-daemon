@@ -22,7 +22,7 @@ class SensorData:
     )
     """Sensor reading timestamp."""
 
-    battery: int|None = -1
+    battery: int|None = None
     """Battery level (%). Use None for data unavailable, BATTERY_AC when on AC power."""
 
     temperature: float|None = None
