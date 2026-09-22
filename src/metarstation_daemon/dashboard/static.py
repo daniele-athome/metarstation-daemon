@@ -96,11 +96,9 @@ class StaticDashboardGenerator:
         self.runway_rotation = int(config.get("runway_rotation", 0)) % 360
         # airfield elevation, configured in feet but used in meters
         self.elevation = float(config.get("elevation_ft", 0)) * _FEET_TO_METERS
-        # None means the system local timezone
-        self.timezone = ZoneInfo(config["timezone"]) if "timezone" in config else None
         self.width = int(config.get("width", 800))
         self.height = int(config.get("height", 600))
-        self.rotate = int(config.get("rotate", 90)) % 360
+        self.rotate = int(config.get("rotate", 0)) % 360
         self.gray_levels = int(config.get("gray_levels", 16))
         self.dither = bool(config.get("dither", False))
         self.pdftoppm_cmd = str(config.get("pdftoppm_cmd", "pdftoppm"))
@@ -129,10 +127,6 @@ class StaticDashboardGenerator:
                 pass
             raise
 
-    def _to_local(self, dt: datetime.datetime) -> datetime.datetime:
-        # astimezone(None) converts to the system local timezone
-        return dt.astimezone(self.timezone)
-
     def _build_wind(self, data: SensorData) -> Wind:
         # 1.1 m/s roughly equivalent to 4 km/h
         # TODO use constant or convert from km/h
@@ -154,8 +148,8 @@ class StaticDashboardGenerator:
         )
 
     def _build_board(self, data: SensorData) -> Board:
-        observed = self._to_local(data.timestamp)
-        updated = self._to_local(datetime.datetime.now(datetime.UTC))
+        observed = data.timestamp.astimezone()
+        updated = datetime.datetime.now()
 
         return Board(
             site=self.site,
