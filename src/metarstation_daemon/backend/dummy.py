@@ -15,6 +15,7 @@ class DummySensorBackend(SensorBackend):
     def __init__(self, config, queue: SensorBackendQueue):
         super().__init__(config, queue)
         self._data_collect_task: asyncio.Task | None = None
+        self._sleep_secs = config.get('sleep_secs', 60)
         self._running = False
 
     async def start(self):
@@ -55,5 +56,4 @@ class DummySensorBackend(SensorBackend):
                 _LOGGER.error("Unexpected error", exc_info=True)
                 # TODO proper error handling
 
-            # TODO make this delay a parameter
-            await asyncio.sleep(10)
+            await asyncio.sleep(self._sleep_secs)
