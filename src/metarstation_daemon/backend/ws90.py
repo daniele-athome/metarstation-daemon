@@ -17,6 +17,11 @@ Service data UUID for the Ecowitt WS90 weather station.
 https://shelly-api-docs.shelly.cloud/docs-ble/Devices/BLU_ZB/wstation/
 """
 
+BTHOME_UUID = "0000fcd2-0000-1000-8000-00805f9b34fb"
+"""
+Service data UUID for BT Home services.
+"""
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -47,7 +52,7 @@ class WS90SensorBackend(SensorBackend):
 
     def __init__(self, config, queue: SensorBackendQueue):
         super().__init__(config, queue)
-        self.bt_address: str = config['bt_address']
+        self.bt_address: str = config.get('bt_address', None)
         self.scanner_sleep_secs: int = config.get('scanner_sleep_secs', 60)
         # TODO passive scan doesn't work without some tricks; it's probably better to just use active scan at regular intervals anyway
         self._scanner = BleakScanner(self._callback,
@@ -116,12 +121,19 @@ class WS90SensorBackend(SensorBackend):
 
     def _callback(self, device: BLEDevice, advertisement_data: AdvertisementData):
         #_LOGGER.debug(f"Device: {device.address}")
-        if device.address != self.bt_address:
-            #_LOGGER.debug(f"Not our device, discarding advertisement")
-            return
 
         if not advertisement_data:
             _LOGGER.warning("No advertisement data")
+            return
+
+        # if a device address is configured, check against that
+        if self.bt_address:
+            if device.address != self.bt_address:
+                #_LOGGER.debug(f"Not our device, discarding advertisement")
+                return
+        # otherwise just take any BT Home packet
+        elif BTHOME_UUID not in advertisement_data.service_data:
+            #_LOGGER.debug(f"Not a BT Home packet, discarding advertisement")
             return
 
         service_info = (BluetoothServiceInfoBleak
