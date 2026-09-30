@@ -1,0 +1,16 @@
+[backend]
+module = "ws90.WS90SensorBackend"
+#bt_address = "XX:XX:XX:XX:XX:XX"
+scanner_sleep_secs = 10
+
+[frontend]
+data_url = "http://localhost:8787/push"
+image_url = "http://localhost:8787/image"
+api_token = "api_token"
+timeout_secs = 10
+
+[dashboard]
+image_path = "metar-dashboard-eink.png"
+site = "Test Flight Airstrip"
+runway_rotation = 140
+elevation_ft = 558
