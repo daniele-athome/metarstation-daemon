@@ -184,7 +184,7 @@ class TapoWebcamBackend(WebcamBackend):
         super().__init__(config, callback)
         self._snapshot_interval_secs = max(config['snapshot_interval_secs'], _STREAM_SETTLE_WAIT_SECS * 2)
         self._debug = config.get('debug', False)
-        self._tempdir = tempfile.mkdtemp('weather-station')
+        self._tempdir = tempfile.mkdtemp(prefix='weather-station')
         self._tapo = TapoStreamer(
             quality=config.get('quality', 'HD'),
             log_callback=self.streamer_log_callback,
