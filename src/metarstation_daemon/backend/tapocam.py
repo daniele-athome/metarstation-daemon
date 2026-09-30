@@ -162,10 +162,10 @@ class TapoStreamer:
                     self._connect_callback()
                 break
 
-            except OSError as e:
-                # network error, queue a retry after some time
+            except Exception as e:
                 _LOGGER.warning(f'Tapo connect failed! {e}')
                 try:
+                    # retry after some time
                     # TODO exponential backoff?
                     await asyncio.sleep(10)
                 except asyncio.CancelledError:
