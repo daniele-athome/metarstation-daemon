@@ -84,7 +84,7 @@ class WeatherDaemon:
         if self._webcam:
             await self._webcam.start()
 
-        # setup the data collection frontend
+        # set up the data collection frontend
         await self._frontend.setup()
 
         # start collecting data
