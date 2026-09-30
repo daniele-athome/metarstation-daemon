@@ -221,31 +221,30 @@ class TapoWebcamBackend(WebcamBackend):
         _LOGGER.debug("Starting webcam snapshot collection")
 
         while not self._shutdown_event.is_set():
-            try:
-                if not self._tapo.ready:
-                    _LOGGER.debug('Connection to camera not ready, not taking snapshot')
-                    continue
-
-                await self._tapo.resume_stream()
+            if not self._tapo.ready:
+                _LOGGER.debug('Connection to camera not ready, not taking snapshot')
+            else:
                 try:
-                    # we currently don't have a way with pytapo API to check for readiness,
-                    # so we just sleep, hoping the stream will be ready by then
-                    await asyncio.sleep(_STREAM_SETTLE_WAIT_SECS)
+                    await self._tapo.resume_stream()
+                    try:
+                        # we currently don't have a way with pytapo API to check for readiness,
+                        # so we just sleep, hoping the stream will be ready by then
+                        await asyncio.sleep(_STREAM_SETTLE_WAIT_SECS)
+                    except asyncio.CancelledError:
+                        break
+
+                    if not self._stream_changed():
+                        _LOGGER.debug('Stream did not change, trying reconnecting to camera')
+                        await self._tapo.restart()
+                        break
+
+                    await self._take_snapshot()
                 except asyncio.CancelledError:
                     break
-
-                if not self._stream_changed():
-                    _LOGGER.debug('Stream did not change, trying reconnecting to camera')
-                    await self._tapo.restart()
-                    break
-
-                await self._take_snapshot()
-            except asyncio.CancelledError:
-                break
-            except:
-                _LOGGER.warning("Error taking snapshot from webcam", exc_info=True)
-            finally:
-                await self._tapo.pause_stream()
+                except:
+                    _LOGGER.warning("Error taking snapshot from webcam", exc_info=True)
+                finally:
+                    await self._tapo.pause_stream()
 
             await asyncio.sleep(self._snapshot_interval_secs - _STREAM_SETTLE_WAIT_SECS)
 
