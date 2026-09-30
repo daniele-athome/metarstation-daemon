@@ -170,3 +170,4 @@ cython_debug/
 
 # Other
 uv.lock
+/config.toml
