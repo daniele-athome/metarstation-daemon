@@ -34,12 +34,11 @@ async def main():
                         .from_device_and_advertisement_data(device, advertisement_data,
                                                             "local", monotonic_time_coarse(), True))
 
-        device_data = BTHomeBluetoothDeviceData()
-        result = device_data.update(service_info)
-        if result:
+        result = BTHomeBluetoothDeviceData().update(service_info)
+        if result.entity_values:
             print(f"Parsed!")
-            print(device_data._sensor_descriptions)
-            print(device_data._sensor_values)
+            print(result.entity_descriptions)
+            print(result.entity_values)
         else:
             print(f"Failed!")
 

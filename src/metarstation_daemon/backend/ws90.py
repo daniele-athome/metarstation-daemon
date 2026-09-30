@@ -25,12 +25,12 @@ Service data UUID for BT Home services.
 _LOGGER = logging.getLogger(__name__)
 
 
-def _is_packet1(data: BTHomeBluetoothDeviceData) -> bool:
-    return DeviceKey('illuminance', None) in data._sensor_values
+def _is_packet1(values: dict[DeviceKey, SensorValue]) -> bool:
+    return DeviceKey('illuminance', None) in values
 
 
-def _is_packet2(data: BTHomeBluetoothDeviceData) -> bool:
-    return DeviceKey('battery', None) in data._sensor_values
+def _is_packet2(values: dict[DeviceKey, SensorValue]) -> bool:
+    return DeviceKey('battery', None) in values
 
 
 DATA_MAPPING = {
@@ -149,15 +149,15 @@ class WS90SensorBackend(SensorBackend):
                         .from_device_and_advertisement_data(device, advertisement_data,
                                                             "local", monotonic_time_coarse(), True))
 
-        device_data = BTHomeBluetoothDeviceData()
-        if device_data.update(service_info):
-            _LOGGER.debug(f"Advertisement data: {device_data._sensor_values}")
-            for sensor_value in device_data._sensor_values.values():
+        sensor_values = BTHomeBluetoothDeviceData().update(service_info).entity_values
+        if sensor_values:
+            _LOGGER.debug(f"Advertisement data: {sensor_values}")
+            for sensor_value in sensor_values.values():
                 self._add_sensor_value(sensor_value)
 
-            if _is_packet1(device_data):
+            if _is_packet1(sensor_values):
                 self._packet1_received = True
-            elif _is_packet2(device_data):
+            elif _is_packet2(sensor_values):
                 self._packet2_received = True
 
             if self._packet1_received and self._packet2_received:
