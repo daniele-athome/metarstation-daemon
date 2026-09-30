@@ -3,12 +3,27 @@ import asyncio
 from ..data import SensorData, WebcamData
 
 
+def _put_drop_oldest(queue: asyncio.Queue, item) -> None:
+    """Put item, discarding the oldest element if the queue is full."""
+    # try again until we can really put the new item
+    while True:
+        try:
+            queue.put_nowait(item)
+            return
+        except asyncio.QueueFull:
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                # another consumer drained it in the meantime
+                pass
+
+
 class SensorBackendQueue:
     def __init__(self, queue):
         self._queue: asyncio.Queue[SensorData] = queue
 
     def push(self, data: SensorData):
-        self._queue.put_nowait(data)
+        _put_drop_oldest(self._queue, data)
 
 
 class SensorBackend:
