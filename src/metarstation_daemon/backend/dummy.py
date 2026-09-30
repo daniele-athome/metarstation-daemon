@@ -34,7 +34,7 @@ class DummySensorBackend(SensorBackend):
         while self._running:
             try:
                 self.queue.push(SensorData(
-                    timestamp=datetime.datetime.now(),
+                    timestamp=datetime.datetime.now(datetime.UTC),
                     battery=100,
                     temperature=20.2,
                     humidity=64,
