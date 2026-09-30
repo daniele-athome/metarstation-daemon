@@ -147,9 +147,11 @@ class WeatherDaemon:
                                 self._dashboard_task.cancel()
 
                             # create background job for generating a static dashboard
-                            self._dashboard_task = asyncio.create_task(
-                                self._generate_dashboard(data)
-                            )
+                            if self._dashboard_task is None or self._dashboard_task.done():
+                                self._dashboard_task = asyncio.create_task(self._generate_dashboard(data))
+                            else:
+                                # FIXME it shouldn't happen with proper timings, but it's not the proper way to handle this
+                                _LOGGER.debug("Dashboard render still running, skipping this reading")
 
                         # we also send the data that failed during the previous attempt
                         await self._frontend.send_data([*self._failed_data, data])
