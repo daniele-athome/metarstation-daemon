@@ -142,10 +142,6 @@ class WeatherDaemon:
                     data = task_data_queue.result()
                     try:
                         if self._dashboard:
-                            # cancel the previous job
-                            if self._dashboard_task:
-                                self._dashboard_task.cancel()
-
                             # create background job for generating a static dashboard
                             if self._dashboard_task is None or self._dashboard_task.done():
                                 self._dashboard_task = asyncio.create_task(self._generate_dashboard(data))
