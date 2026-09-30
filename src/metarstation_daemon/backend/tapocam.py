@@ -107,7 +107,7 @@ class TapoStreamer:
                 pass
 
     async def _discover(self):
-        while not self._shutdown_event.set():
+        while not self._shutdown_event.is_set():
             _LOGGER.debug(f'Discovering camera on interface {self._discovery_interface}')
             if self._discovery_username and self._discovery_password:
                 credentials = kasa_Credentials(
@@ -141,7 +141,7 @@ class TapoStreamer:
 
     async def _connect(self):
         address = self._discovered_address if self._discovered_address is not None else self._host
-        while not self._shutdown_event.set():
+        while not self._shutdown_event.is_set():
             try:
                 self._tapo = await asyncio.get_running_loop().run_in_executor(None, self._create_tapo, address)
                 self.ready = True
