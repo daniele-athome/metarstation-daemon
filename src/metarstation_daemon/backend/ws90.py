@@ -67,7 +67,10 @@ class WS90SensorBackend(SensorBackend):
         self._data_collect_task: asyncio.Task | None = None
 
     async def start(self):
-        _LOGGER.debug(f"WS90 scanner for {self.bt_address} starting")
+        if self.bt_address:
+            _LOGGER.debug(f"WS90 scanner for {self.bt_address} starting")
+        else:
+            _LOGGER.debug(f"WS90 scanner for any BTHome device starting")
         self._data_collect_task = asyncio.get_running_loop().create_task(self._collect_data_start())
 
     async def stop(self):
