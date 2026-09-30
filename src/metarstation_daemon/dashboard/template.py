@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
 STRING_DASH = "--"
+STRING_DASH_TIME = "--:--"
 
 
 @dataclass
@@ -28,8 +29,8 @@ class Ephem:
 
 @dataclass
 class Stamp:
-    observed: str = None
-    updated: str = None
+    observed: str | None = None
+    updated: str | None = None
 
 
 @dataclass
@@ -53,16 +54,16 @@ class Board:
 
 
 def _jinja_filter_dash(value):
-    return "--" if value is None or value == "" else value
+    return STRING_DASH if value is None or value == "" else value
 
 
 def _jinja_filter_dash_time(value):
-    return "--:--" if value is None or value == "" else value
+    return STRING_DASH_TIME if value is None or value == "" else value
 
 
 def _build_jinja_env() -> Environment:
     env = Environment(
-        loader=PackageLoader(__name__, "templates"),
+        loader=PackageLoader(__package__, "templates"),
         undefined=StrictUndefined,
         autoescape=True,
     )
@@ -71,6 +72,6 @@ def _build_jinja_env() -> Environment:
     return env
 
 
-def load_template(self):
+def load_template():
     # hard-coded template file for now :P
     return _build_jinja_env().get_template("dashboard_it.800x600.html.j2")

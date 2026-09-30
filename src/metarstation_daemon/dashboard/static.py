@@ -102,13 +102,12 @@ class StaticDashboardGenerator:
         self.gray_levels = int(config.get("gray_levels", 16))
         self.dither = bool(config.get("dither", False))
         self.pdftoppm_cmd = str(config.get("pdftoppm_cmd", "pdftoppm"))
-        self.template = load_template(self)
-
         if self.rotate not in (0, 90, 180, 270):
-            raise ValueError(f"config: rotate must be one of: 0/90/180/270")
+            raise ValueError("config: rotate must be one of: 0/90/180/270")
         if not 2 <= self.gray_levels <= 256:
             raise ValueError("config: gray_levels must be a number between 2 and 256")
 
+        self.template = load_template()
         self._rasterizer = EInkImageRasterizer(self.gray_levels, self.pdftoppm_cmd)
 
     def _write_atomic(self, data: bytes) -> None:
