@@ -79,6 +79,7 @@ class WS90SensorBackend(SensorBackend):
         self._data_event.set()
         if self._data_collect_task:
             self._data_collect_task.cancel()
+            await asyncio.gather(self._data_collect_task, return_exceptions=True)
 
     async def _collect_data_start(self):
         while True:
@@ -95,17 +96,22 @@ class WS90SensorBackend(SensorBackend):
                     self._push_sensor_value()
                 else:
                     # shutting down
-                    await self._scanner.stop()
+                    # (the finally will stop the scanner)
                     break
 
                 # stop scanning and wait for the interval
-                await self._scanner.stop()
+                # (the finally will stop the scanner)
             except asyncio.CancelledError:
                 # we've been canceled, shutting down
                 break
             except:
                 _LOGGER.error("Unexpected error", exc_info=True)
                 # TODO proper error handling
+            finally:
+                try:
+                    await self._scanner.stop()
+                except:
+                    pass
 
             await asyncio.sleep(self.scanner_sleep_secs)
 
