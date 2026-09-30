@@ -65,7 +65,7 @@ class WeatherDaemon:
 
         self._shutdown_event = asyncio.Event()
         self._failed_data: deque[SensorData] = deque(maxlen=FAILED_QUEUE_LIMIT)
-        self._dashboard_task = None
+        self._dashboard_task: asyncio.Future | None = None
 
     async def run(self):
         def sig_handler(code):
@@ -98,9 +98,9 @@ class WeatherDaemon:
         if self._webcam:
             await self._webcam.stop()
         if self._dashboard_task:
-            # TODO resilience test
             self._dashboard_task.cancel()
-            await self._dashboard_task
+            # return_exceptions=True - prevent raise of asyncio.CancelledError
+            await asyncio.gather(self._dashboard_task, return_exceptions=True)
 
     async def _collect_data_start(self):
         _LOGGER.debug("Starting data collection")
@@ -182,7 +182,7 @@ class WeatherDaemon:
     async def _generate_dashboard(self, data: SensorData):
         try:
             return await asyncio.to_thread(self._dashboard.generate_dashboard, data)
-        except:
+        except Exception:
             _LOGGER.error("Error generating dashboard", exc_info=True)
 
 
