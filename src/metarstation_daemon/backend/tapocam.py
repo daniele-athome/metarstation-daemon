@@ -6,8 +6,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from kasa import Discover as kasa_Discover, Credentials as kasa_Credentials
-
+# noinspection package-requirements
+from kasa import Discover as kasa_Discover, Credentials as kasa_Credentials, Device as kasa_Device, \
+    DeviceType as kasa_DeviceType
 from pytapo import Tapo
 from pytapo.media_stream.streamer import Streamer
 
@@ -27,6 +28,13 @@ async def _print_ffmpeg_logs(stderr):
         if not line:
             break
         _LOGGER.debug(f"  {line.decode().strip()}")
+
+
+def find_first_camera_address(devices: dict[str, kasa_Device]) -> str | None:
+    for (address, device) in devices.items():
+        if device.device_type == kasa_DeviceType.Camera:
+            return address
+    return None
 
 
 class TapoStreamer:
@@ -124,10 +132,14 @@ class TapoStreamer:
                     discovery_timeout=10,
                 )
                 if len(devices) > 0:
-                    # store the discovered address and continue with normal connection
-                    self._discovered_address = next(iter(devices.keys()))
-                    await self.start()
-                    break
+                    # FIXME we need to find a way to get the camera we want (by S/N?), without knowing its IP address
+                    discovered_address = find_first_camera_address(devices)
+                    if discovered_address:
+                        _LOGGER.info(f"Using discovered camera at {discovered_address}")
+                        # store the discovered address and continue with normal connection
+                        self._discovered_address = discovered_address
+                        await self.start()
+                        break
 
             except asyncio.CancelledError:
                 break
