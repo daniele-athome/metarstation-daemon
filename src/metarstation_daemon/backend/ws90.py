@@ -52,7 +52,8 @@ class WS90SensorBackend(SensorBackend):
 
     def __init__(self, config, queue: SensorBackendQueue):
         super().__init__(config, queue)
-        self.bt_address: str = config.get('bt_address', None)
+        bt_address = config.get('bt_address', None)
+        self.bt_address: str | None = bt_address.upper() if bt_address else None
         self.scanner_sleep_secs: int = config.get('scanner_sleep_secs', 60)
         self.scanner_timeout_secs: int = config.get('scanner_timeout_secs', 60)
         # TODO passive scan doesn't work without some tricks; it's probably better to just use active scan at regular intervals anyway
@@ -149,7 +150,7 @@ class WS90SensorBackend(SensorBackend):
 
         # if a device address is configured, check against that
         if self.bt_address:
-            if device.address != self.bt_address:
+            if device.address.upper() != self.bt_address:
                 #_LOGGER.debug(f"Not our device, discarding advertisement")
                 return
         # otherwise just take any BT Home packet
