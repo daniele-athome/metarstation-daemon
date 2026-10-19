@@ -29,6 +29,7 @@ class DummySensorBackend(SensorBackend):
         self._running = False
         if self._data_collect_task:
             self._data_collect_task.cancel()
+            await asyncio.gather(self._data_collect_task, return_exceptions=True)
 
     async def _collect_data_start(self):
         while self._running:
