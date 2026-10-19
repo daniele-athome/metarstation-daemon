@@ -23,7 +23,6 @@ class HTTPDataFrontend(DataFrontend):
 
     async def setup(self):
         _LOGGER.debug("HTTP data frontend starting")
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(timeout=self.timeout_secs))
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(timeout=self.timeout_secs),
             auth=BearerTokenAuth(self.api_token),
