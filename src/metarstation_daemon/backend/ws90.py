@@ -54,6 +54,7 @@ class WS90SensorBackend(SensorBackend):
         super().__init__(config, queue)
         self.bt_address: str = config.get('bt_address', None)
         self.scanner_sleep_secs: int = config.get('scanner_sleep_secs', 60)
+        self.scanner_timeout_secs: int = config.get('scanner_timeout_secs', 60)
         # TODO passive scan doesn't work without some tricks; it's probably better to just use active scan at regular intervals anyway
         self._scanner = BleakScanner(self._callback,
                                      scanning_mode='active',
@@ -82,13 +83,15 @@ class WS90SensorBackend(SensorBackend):
             await asyncio.gather(self._data_collect_task, return_exceptions=True)
 
     async def _collect_data_start(self):
+        # FIXME better and safer exit strategy (i.e. do not use self._data_event for existing)
         while True:
+            # noinspection broad-exception
             try:
                 # start scanning: the callback will trigger the data event when ready
                 await self._scanner.start()
 
                 # wait for the data event from the scanner callback
-                await asyncio.wait_for(self._data_event.wait(), timeout=None)
+                await asyncio.wait_for(self._data_event.wait(), timeout=self.scanner_timeout_secs)
                 self._data_event.clear()
 
                 if self._packet1_received and self._packet2_received:
@@ -104,20 +107,29 @@ class WS90SensorBackend(SensorBackend):
             except asyncio.CancelledError:
                 # we've been canceled, shutting down
                 break
+            except asyncio.TimeoutError:
+                # the next scan could have data that is unrelated to the last scan, so reset the internal buffer
+                self._reset_sensor_data()
+                # clear the data event (it wasn't cleared because of the timeout)
+                self._data_event.clear()
             except:
                 _LOGGER.error("Unexpected error", exc_info=True)
                 # TODO proper error handling
             finally:
+                # noinspection broad-exception
                 try:
                     await self._scanner.stop()
                 except:
-                    pass
+                    _LOGGER.warning("Unable to stop bluetooth scanner", exc_info=True)
 
             await asyncio.sleep(self.scanner_sleep_secs)
 
     def _push_sensor_value(self):
         self.queue.push(self._latest_data)
         # reset buffer object
+        self._reset_sensor_data()
+
+    def _reset_sensor_data(self):
         self._latest_data = SensorData()
         self._packet1_received = False
         self._packet2_received = False
