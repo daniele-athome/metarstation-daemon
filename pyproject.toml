@@ -9,9 +9,7 @@ dependencies = [
     "bthome-ble>=3.19.1,<4",
     "bluetooth-data-tools>=1.29.24,<1.30.0",
     "sensor-state-data>=2.20.0,<3",
-    # dataclasses-json (unmaintained) keeps <4
-    "marshmallow>=3.26,<4",
-    "dataclasses-json==0.6.7",
+    "mashumaro>=3.22,<4",
     "httpx==0.28.1",
     "pytapo>=3.3.54,<3.4.0",
     "python-kasa==0.10.2",
