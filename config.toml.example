@@ -4,6 +4,16 @@ module = "ws90.WS90SensorBackend"
 scanner_sleep_secs = 10
 scanner_timeout_secs = 30
 
+[webcam]
+discovery_interface = "wlan0"
+camera_username = "camera_username"
+camera_password = "camera_username"
+cloud_username = "admin"
+cloud_password = "cloud_password"
+snapshot_interval_secs = 60
+debug = false
+quality = "HD"
+
 [frontend]
 data_url = "http://localhost:8787/push"
 image_url = "http://localhost:8787/image"

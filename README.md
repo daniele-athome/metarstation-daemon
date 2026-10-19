@@ -11,16 +11,27 @@ At the moment only the following is supported:
 * Some Tapo cameras (only tested with [Tapo C500](https://www.tapo.com/en/product/smart-camera/tapo-c500/))
 * Sending data to a HTTP endpoint supporting bearer token authentication (as in `Authorization: Bearer ...`)
 
+## Non-Python Dependencies
+
+Must be available in your `PATH`:
+
+* `ffmpeg` if you enable the webcam integration section in configuration
+* `pdftoppm` if you enable the dashboard section in configuration
+
 ## Configure
 
-Configuration is in `config.toml`.
-
-Webcam integration requires the `ffmpeg` binary to be installed in your `PATH`.
+An example configuration file is in `config.toml.example`.
 
 ## Run
 
-Running the program requires `uv` to be installed: https://docs.astral.sh/uv/
+Running the program requires either [uv](https://docs.astral.sh/uv/) or installing into a venv:
 
 ```shell
-./weather-daemon.py -c config.toml
+# Faster: run with uv
+uv run weather-daemon -c config.toml
+# Annoying: create and install inside of a venv
+python3 -m venv .venv
+source .venv/bin/activate
+pip install .
+weather-daemon -c config.toml
 ```
