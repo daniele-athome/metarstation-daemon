@@ -18,7 +18,7 @@ from ..data import WebcamData
 _LOGGER = logging.getLogger(__name__)
 _STREAM_FILENAME = "stream.m3u8"
 _IMAGE_TYPE = 'image/jpeg'
-_STREAM_SETTLE_WAIT_SECS = 10
+_STREAM_SETTLE_WAIT_SECS = 15
 
 
 async def _print_ffmpeg_logs(stderr):
