@@ -94,6 +94,8 @@ class WeatherDaemon:
 
         # cleanup
         data_collect_task.cancel()
+        # return_exceptions=True - prevent raise of asyncio.CancelledError
+        await asyncio.gather(data_collect_task, return_exceptions=True)
         await self._backend.stop()
         if self._webcam:
             await self._webcam.stop()
@@ -153,6 +155,7 @@ class WeatherDaemon:
                         await self._frontend.send_data([*self._failed_data, data])
                         self._failed_data.clear()
                     except asyncio.CancelledError:
+                        # we've been canceled, shutting down
                         continue
                     except DataRejectedError:
                         _LOGGER.warning("Data was rejected by server, dropping %d readings",
@@ -170,13 +173,14 @@ class WeatherDaemon:
                         try:
                             await self._frontend.send_webcam(webcam_data)
                         except asyncio.CancelledError:
+                            # we've been canceled, shutting down
                             continue
                         except:
                             # TODO proper exception handling
                             _LOGGER.warning("Failed to send webcam data", exc_info=True)
             except asyncio.CancelledError:
                 # we've been canceled, shutting down
-                pass
+                continue
             except:
                 _LOGGER.error("Unexpected error", exc_info=True)
                 # TODO proper error handling
