@@ -26,6 +26,12 @@ jobs:
             python3-brotli python3-attr python3-jinja2 python3-certifi \
             python3-idna python3-markupsafe python3-requests python3-urllib3
 
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
       - name: Install project
         run: |
           python3 -m venv --system-site-packages .venv
