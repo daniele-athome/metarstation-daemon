@@ -19,15 +19,13 @@ _LOGGER = logging.getLogger(__name__)
 _STREAM_FILENAME = "stream.m3u8"
 _IMAGE_TYPE = 'image/jpeg'
 _STREAM_SETTLE_WAIT_SECS = 15
+_SNAPSHOT_TIMEOUT_SECS = 30
 
 
-async def _print_ffmpeg_logs(stderr):
+def _print_ffmpeg_logs(stderr: bytes):
     _LOGGER.debug('ffmpeg snapshot output:')
-    while True:
-        line = await stderr.readline()
-        if not line:
-            break
-        _LOGGER.debug(f"  {line.decode().strip()}")
+    for line in stderr.decode(errors='replace').splitlines():
+        _LOGGER.debug(f"  {line.strip()}")
 
 
 def find_first_camera_address(devices: dict[str, kasa_Device]) -> str | None:
@@ -285,14 +283,24 @@ class TapoWebcamBackend(WebcamBackend):
             'pipe:1',
         ]
         _LOGGER.debug(f"cmdline: {cmd}")
-        self._snapshot_process = await asyncio.create_subprocess_exec(
+        process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        snapshot_data = await self._snapshot_process.stdout.read()
-        await self._snapshot_process.wait()
-        if self._snapshot_process.returncode == 0:
+        try:
+            async with asyncio.timeout(_SNAPSHOT_TIMEOUT_SECS):
+                snapshot_data, stderr_data = await process.communicate()
+        except TimeoutError:
+            _LOGGER.warning(f"ffmpeg snapshot timed out after {_SNAPSHOT_TIMEOUT_SECS} seconds")
+            return
+        finally:
+            # timed out or canceled: kill any leftover ffmpeg process
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+
+        if process.returncode == 0:
             # TEST write to file
             if self._debug:
                 with open(Path(self._tempdir) / "snapshot.jpg", "wb") as f:
@@ -304,7 +312,7 @@ class TapoWebcamBackend(WebcamBackend):
                 image_type=_IMAGE_TYPE,
             ))
         else:
-            await _print_ffmpeg_logs(self._snapshot_process.stderr)
+            _print_ffmpeg_logs(stderr_data)
 
     def _stream_changed(self) -> bool:
         stream_file = self._stream_file()
