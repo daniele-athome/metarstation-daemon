@@ -113,14 +113,14 @@ class WS90SensorBackend(SensorBackend):
                 self._reset_sensor_data()
                 # clear the data event (it wasn't cleared because of the timeout)
                 self._data_event.clear()
-            except:
+            except Exception:
                 _LOGGER.error("Unexpected error", exc_info=True)
                 # TODO proper error handling
             finally:
                 # noinspection broad-exception
                 try:
                     await self._scanner.stop()
-                except:
+                except Exception:
                     _LOGGER.warning("Unable to stop bluetooth scanner", exc_info=True)
 
             await asyncio.sleep(self.scanner_sleep_secs)

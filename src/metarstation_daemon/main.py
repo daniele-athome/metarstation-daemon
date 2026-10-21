@@ -179,13 +179,13 @@ class WeatherDaemon:
                         except asyncio.CancelledError:
                             # we've been canceled, shutting down
                             continue
-                        except:
+                        except Exception:
                             # TODO proper exception handling
                             _LOGGER.warning("Failed to send webcam data", exc_info=True)
             except asyncio.CancelledError:
                 # we've been canceled, shutting down
                 continue
-            except:
+            except Exception:
                 _LOGGER.error("Unexpected error", exc_info=True)
                 # TODO proper error handling
 

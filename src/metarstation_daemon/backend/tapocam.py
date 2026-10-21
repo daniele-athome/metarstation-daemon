@@ -110,7 +110,7 @@ class TapoStreamer:
                     [f.unlink() for f in Path(self._tempdir).glob("*") if f.is_file()]
                 await self._streamer.stop()
                 self._streamer = None
-            except:
+            except Exception:
                 _LOGGER.warning(
                     "Unable to propertly cleanup streamer (memory leaks may occur, destroying our reference anyway)")
 
@@ -143,7 +143,7 @@ class TapoStreamer:
 
             except asyncio.CancelledError:
                 break
-            except:
+            except Exception:
                 _LOGGER.warning('Error discovering camera', exc_info=True)
                 try:
                     # TODO exponential backoff?
@@ -255,7 +255,7 @@ class TapoWebcamBackend(WebcamBackend):
                     await self._take_snapshot()
                 except asyncio.CancelledError:
                     break
-                except:
+                except Exception:
                     _LOGGER.warning("Error taking snapshot from webcam", exc_info=True)
                 finally:
                     await self._tapo.pause_stream()
