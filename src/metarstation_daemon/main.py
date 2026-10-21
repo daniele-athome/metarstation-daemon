@@ -53,7 +53,7 @@ class WeatherDaemon:
         self._webcam_callback: WebcamBackendCallback | None = None
         if 'webcam' in self.config:
             self._webcam_callback = WebcamBackendCallback()
-            self._webcam: WebcamBackend | None = TapoWebcamBackend(self.config['webcam'], self._webcam_callback)
+            self._webcam = TapoWebcamBackend(self.config['webcam'], self._webcam_callback)
 
         # data upload frontend
         self._frontend: DataFrontend = HTTPDataFrontend(self.config['frontend'])
