@@ -1,0 +1,63 @@
+name: test
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    # the most similar to Debian 13 "trixie"
+    runs-on: ubuntu-26.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
+            python3-brotli python3-attr python3-jinja2 python3-certifi \
+            python3-idna python3-markupsafe python3-requests python3-urllib3
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install project
+        run: |
+          python3 -m venv --system-site-packages .venv
+          .venv/bin/pip install .
+
+      - name: Run tests
+        run: >
+          uv run
+          --with pytest-md-report
+          --with pytest-github-actions-annotate-failures
+          pytest
+          --md-report
+          --md-report-flavor gfm
+          --md-report-color never
+          --md-report-output=md-report.md
+
+      - name: Publish test report
+        if: always()
+        run: |
+          if [ -f md-report.md ]; then
+            {
+              echo "## Test report"
+              echo
+              cat md-report.md
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No test report produced: pytest failed before running any test." \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
