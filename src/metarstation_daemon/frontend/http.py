@@ -3,10 +3,19 @@ import logging
 import httpx
 from httpx import URL
 
-from .interface import DataFrontend
+from .interface import DataFrontend, DataFrontendError, DataRejectedError
 from ..data import SensorData, WebcamData
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _check_response(response: httpx.Response):
+    if response.is_success:
+        return
+    if response.is_client_error and response.status_code not in (401, 403, 408, 429):
+        raise DataRejectedError(f"HTTP request rejected with status code {response.status_code}")
+    # some errors can be retried
+    raise DataFrontendError(f"HTTP request failed with status code {response.status_code}")
 
 
 class HTTPDataFrontend(DataFrontend):
@@ -32,9 +41,7 @@ class HTTPDataFrontend(DataFrontend):
     async def send_data(self, data: list[SensorData]):
         _LOGGER.debug(f"Sending data: {data}")
         r = await self._client.post(self.push_url, json=[x.to_dict() for x in data[-self.DATA_LIMIT:]])
-        if r.status_code not in (200, 201):
-            # TODO custom exception maybe?
-            raise RuntimeError(f"HTTP request failed with status code {r.status_code}")
+        _check_response(r)
 
     async def send_webcam(self, data: WebcamData):
         _LOGGER.debug(f"Sending webcam snapshot @ {data.expire}")
@@ -42,9 +49,7 @@ class HTTPDataFrontend(DataFrontend):
         r = await self._client.post(image_url, content=data.image_data, headers={
             'content-type': data.image_type,
         })
-        if r.status_code not in (200, 201):
-            # TODO custom exception maybe?
-            raise RuntimeError(f"HTTP request failed with status code {r.status_code}")
+        _check_response(r)
 
 
 class BearerTokenAuth(httpx.Auth):

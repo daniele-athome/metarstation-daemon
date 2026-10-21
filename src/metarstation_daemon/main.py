@@ -16,7 +16,7 @@ from .backend.tapocam import TapoWebcamBackend
 from .dashboard import StaticDashboardGenerator
 from .data import SensorData, WebcamData
 from .frontend.http import HTTPDataFrontend
-from .frontend.interface import DataFrontend
+from .frontend.interface import DataFrontend, DataRejectedError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -154,7 +154,11 @@ class WeatherDaemon:
                         self._failed_data.clear()
                     except asyncio.CancelledError:
                         continue
-                    except:
+                    except DataRejectedError:
+                        _LOGGER.warning("Data was rejected by server, dropping %d readings",
+                                        len(self._failed_data) + 1, exc_info=True)
+                        self._failed_data.clear()
+                    except Exception:
                         # TODO proper exception handling
                         _LOGGER.warning("Failed to send data", exc_info=True)
                         # store the data for a later retry attempt

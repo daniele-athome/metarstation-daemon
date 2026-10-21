@@ -1,6 +1,14 @@
 from ..data import SensorData, WebcamData
 
 
+class DataFrontendError(Exception):
+    """Sending failed for a temporary reason (e.g. server error): the same data can be sent again later."""
+
+
+class DataRejectedError(DataFrontendError):
+    """The frontend refused the data itself: sending the same data again would fail the same way."""
+
+
 class DataFrontend:
 
     # noinspection PyUnusedLocal
