@@ -50,11 +50,11 @@ class DummySensorBackend(SensorBackend):
                     precipitation=331.4,
                 ))
 
+                await asyncio.sleep(self._sleep_secs)
+
             except asyncio.CancelledError:
                 # we've been canceled, shutting down
                 break
             except:
                 _LOGGER.error("Unexpected error", exc_info=True)
                 # TODO proper error handling
-
-            await asyncio.sleep(self._sleep_secs)
