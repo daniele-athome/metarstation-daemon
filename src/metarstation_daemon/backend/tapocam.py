@@ -220,11 +220,13 @@ class TapoWebcamBackend(WebcamBackend):
 
     async def stop(self):
         _LOGGER.info("Tapo webcam stopping")
-        await self._tapo.stop()
-
         self._shutdown_event.set()
+
         if self._snapshot_task:
             self._snapshot_task.cancel()
+            await asyncio.gather(self._snapshot_task, return_exceptions=True)
+
+        await self._tapo.stop()
 
         # cleanup temporary files
         shutil.rmtree(self._tempdir, ignore_errors=True)
