@@ -75,8 +75,6 @@ class WeatherDaemon:
         for sig in (signal.SIGINT, signal.SIGTERM):
             asyncio.get_running_loop().add_signal_handler(sig, functools.partial(sig_handler, sig))
 
-        notify_ready()
-
         # start collecting data from the device
         await self._backend.start()
 
@@ -90,7 +88,13 @@ class WeatherDaemon:
         # start collecting data
         data_collect_task = asyncio.get_running_loop().create_task(self._collect_data_start())
 
+        # everything is set up!
+        notify_ready()
+
         await self._shutdown_event.wait()
+
+        # shutdown event was triggered, shutting down
+        notify_stopping()
 
         # cleanup
         data_collect_task.cancel()
@@ -196,6 +200,12 @@ def notify_ready():
     if is_systemd():
         from . import sdnotify
         sdnotify.SystemdNotifier().notify("READY=1")
+
+
+def notify_stopping():
+    if is_systemd():
+        from . import sdnotify
+        sdnotify.SystemdNotifier().notify("STOPPING=1")
 
 
 def is_systemd():
