@@ -105,7 +105,7 @@ class TapoStreamer:
             try:
                 if self._streamer.streamProcess:
                     self._streamer.streamProcess.kill()
-                    await self._streamer.streamProcess.process.wait()
+                    await self._streamer.streamProcess.wait()
                     # remove all contents of tempdir
                     [f.unlink() for f in Path(self._tempdir).glob("*") if f.is_file()]
                 await self._streamer.stop()
