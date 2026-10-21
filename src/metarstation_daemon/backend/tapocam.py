@@ -105,12 +105,14 @@ class TapoStreamer:
             try:
                 if self._streamer.streamProcess:
                     self._streamer.streamProcess.kill()
+                    await self._streamer.streamProcess.process.wait()
                     # remove all contents of tempdir
                     [f.unlink() for f in Path(self._tempdir).glob("*") if f.is_file()]
                 await self._streamer.stop()
                 self._streamer = None
             except:
-                pass
+                _LOGGER.warning(
+                    "Unable to propertly cleanup streamer (memory leaks may occur, destroying our reference anyway)")
 
     async def _discover(self):
         while not self._shutdown_event.is_set():
