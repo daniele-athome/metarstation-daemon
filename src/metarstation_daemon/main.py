@@ -8,15 +8,18 @@ import sys
 import tomllib
 from collections import deque
 from io import BufferedReader
-from typing import BinaryIO, IO
+from typing import BinaryIO, IO, TYPE_CHECKING
 
 from .backend import create_instance as create_backend_instance
 from .backend.interface import SensorBackend, SensorBackendQueue, WebcamBackend, WebcamBackendCallback
-from .backend.tapocam import TapoWebcamBackend
-from .dashboard import StaticDashboardGenerator
 from .data import SensorData, WebcamData
 from .frontend.http import HTTPDataFrontend
 from .frontend.interface import DataFrontend, DataRejectedError
+
+if TYPE_CHECKING:
+    from .backend.tapocam import TapoWebcamBackend
+    from .dashboard import StaticDashboardGenerator
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,6 +56,7 @@ class WeatherDaemon:
         self._webcam_callback: WebcamBackendCallback | None = None
         if 'webcam' in self.config:
             self._webcam_callback = WebcamBackendCallback()
+            from .backend.tapocam import TapoWebcamBackend
             self._webcam = TapoWebcamBackend(self.config['webcam'], self._webcam_callback)
 
         # data upload frontend
@@ -61,6 +65,7 @@ class WeatherDaemon:
         # static dashboard generator
         self._dashboard: StaticDashboardGenerator | None = None
         if 'dashboard' in self.config:
+            from .dashboard import StaticDashboardGenerator
             self._dashboard = StaticDashboardGenerator(self.config['dashboard'])
 
         self._shutdown_event = asyncio.Event()
