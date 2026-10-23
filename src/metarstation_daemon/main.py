@@ -232,5 +232,7 @@ def main() -> None:
     # enable HTTP logging
     # logging.getLogger("httpx").setLevel(logging.DEBUG)
     # logging.getLogger("httpcore").setLevel(logging.DEBUG)
+    # silence font subsetting noise from WeasyPrint
+    logging.getLogger("fontTools.subset").setLevel(logging.WARNING)
 
     asyncio.run(WeatherDaemon(sys.argv).run())
