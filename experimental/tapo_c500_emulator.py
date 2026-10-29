@@ -4,8 +4,8 @@
 # dependencies = ["pycryptodome>=3.20", "cryptography>=42"]
 # ///
 """
-Tapo C500 emulator, written against pytapo 3.3.x/3.4.x and python-kasa 0.10.x
-as the reference implementations. It speaks the three protocols a real camera
+Tapo C500 emulator, written against pytapo 3.3.x/3.4.x and python-kasa
+0.10.x/0.12.x as the reference implementations. It speaks the three protocols a real camera
 speaks, so `pytapo.Tapo` and `pytapo.media_stream.streamer.Streamer` work
 unmodified:
 
@@ -25,7 +25,7 @@ unmodified:
      200 + Key-Exchange, then AES-128-CBC encrypted MPEG-TS chunks.
      Mirrors pytapo/media_stream/session.py and crypto.py.
 
-  3. Discovery, UDP 20002
+  3. Discovery, UDP 20002 (--discovery-ports also puts it on 20004)
      Replies to kasa.Discover's probe with a 16-byte header plus a
      DiscoveryResult JSON describing a SMART.IPCAMERA over HTTPS.
      Mirrors kasa/discover.py::_get_discovery_json.
@@ -101,6 +101,10 @@ STREAM_REALM = "TP-LINK IP-Camera"
 DIGEST_URI = "/stream"
 
 DISCOVERY_PORT = 20002
+DISCOVERY_PORT_LV3 = 20004
+"""python-kasa 0.12 sends the same AES discovery query to both ports and parses
+a reply from either one the same way; some recent firmwares answer on 20004."""
+
 DISCOVERY_HEADER = b"\x02\x00\x00\x01" + b"\x00" * 12
 """kasa's _get_discovery_json only reads data[16:], so the header is cosmetic."""
 
@@ -160,6 +164,7 @@ class Config:
     # discovery
     discovery: bool = True
     discovery_bind: str = "0.0.0.0"
+    discovery_ports: tuple[int, ...] = (DISCOVERY_PORT,)
     advertise_ip: str | None = None
     extra_devices: int = 0
     decoys_first: bool = False
@@ -180,6 +185,8 @@ class Config:
     def __post_init__(self) -> None:
         if self.cloud_password is None:
             self.cloud_password = self.password
+        # argparse hands over a list
+        self.discovery_ports = tuple(self.discovery_ports)
 
     @property
     def hashed_password(self) -> str:
@@ -1132,8 +1139,9 @@ class FakeDevice:
 class DiscoveryProtocol(asyncio.DatagramProtocol):
     """One listener answers on behalf of every fake device."""
 
-    def __init__(self, devices: list[FakeDevice]):
+    def __init__(self, devices: list[FakeDevice], port: int = DISCOVERY_PORT):
         self.devices = devices
+        self.port = port
         self.transport: asyncio.DatagramTransport | None = None
 
     def connection_made(self, transport) -> None:  # type: ignore[override]
@@ -1143,8 +1151,9 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         if self.transport is None:
             return
         _LOGGER.info(
-            "discovery probe from %s, answering as %s",
+            "discovery probe from %s on port %d, answering as %s",
             addr[0],
+            self.port,
             ", ".join(d.label for d in self.devices),
         )
         for device in self.devices:
@@ -1158,64 +1167,69 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
 # --- wiring ------------------------------------------------------------------
 
 
-def bind_udp(ip: str) -> socket.socket:
+def bind_udp(ip: str, port: int) -> socket.socket:
     """SO_REUSEADDR everywhere, because the wildcard listener and the decoys'
-    per-address responders all want port 20002. kasa drops any reply whose
-    source port is not the discovery port, so the responders cannot use an
-    ephemeral one."""
+    per-address responders all want the same discovery port. kasa drops any
+    reply whose source port is not a discovery port, so the responders cannot
+    use an ephemeral one."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.bind((ip, DISCOVERY_PORT))
+    sock.bind((ip, port))
     sock.setblocking(False)
     return sock
 
 
 async def start_discovery(
     config: Config,
-) -> tuple[asyncio.DatagramTransport, list[socket.socket]]:
+) -> tuple[list[asyncio.DatagramTransport], list[socket.socket]]:
     advertised = config.advertise_ip or "127.0.0.1"
-    devices = [FakeDevice(label="C500", result=camera_discovery_result(advertised))]
-
-    # The wildcard listener has to be bound before the per-address responders,
-    # otherwise the specific binds make the wildcard bind fail with EADDRINUSE.
-    listener = bind_udp(config.discovery_bind)
-
-    responders: list[socket.socket] = []
+    # label, result, own address -- None means "reply from the listening socket"
+    entries: list[tuple[str, dict, str | None]] = [
+        ("C500", camera_discovery_result(advertised), None)
+    ]
     for index in range(config.extra_devices):
         ip = f"127.0.0.{index + 2}"
         result = decoy_discovery_result(ip, index)
-        responder = bind_udp(ip)
-        responders.append(responder)
-        devices.append(
-            FakeDevice(
-                label=f"{result['device_name']} @ {ip}",
-                result=result,
-                responder=responder,
-            )
-        )
+        entries.append((f"{result['device_name']} @ {ip}", result, ip))
 
     if config.decoys_first:
         # Discovery order is otherwise whatever the network delivers first;
         # answering as the decoys before the camera makes the outcome repeatable.
-        devices = devices[1:] + devices[:1]
+        entries = entries[1:] + entries[:1]
 
     loop = asyncio.get_running_loop()
-    transport, _ = await loop.create_datagram_endpoint(
-        lambda: DiscoveryProtocol(devices), sock=listener
-    )
-    _LOGGER.info(
-        "discovery listening on %s:%d as %d device(s)",
-        config.discovery_bind,
-        DISCOVERY_PORT,
-        len(devices),
-    )
+    transports: list[asyncio.DatagramTransport] = []
+    responders: list[socket.socket] = []
+    for port in config.discovery_ports:
+        # The wildcard listener has to be bound before the per-address responders,
+        # otherwise the specific binds make the wildcard bind fail with EADDRINUSE.
+        listener = bind_udp(config.discovery_bind, port)
+
+        devices: list[FakeDevice] = []
+        for label, result, ip in entries:
+            responder = None if ip is None else bind_udp(ip, port)
+            if responder is not None:
+                responders.append(responder)
+            devices.append(FakeDevice(label=label, result=result, responder=responder))
+
+        transport, _ = await loop.create_datagram_endpoint(
+            lambda devs=devices, p=port: DiscoveryProtocol(devs, p), sock=listener
+        )
+        transports.append(transport)
+        _LOGGER.info(
+            "discovery listening on %s:%d as %d device(s)",
+            config.discovery_bind,
+            port,
+            len(devices),
+        )
+
     if config.extra_devices:
         _LOGGER.info(
             'decoys answer from 127.0.0.2+, so discover with target="127.0.0.255" '
             "to see them all"
         )
-    return transport, responders
+    return transports, responders
 
 
 def _suppress_tls_noise(loop: asyncio.AbstractEventLoop) -> None:
@@ -1283,8 +1297,8 @@ async def run(config: Config) -> None:
             )
 
         if config.discovery:
-            transport, responders = await start_discovery(config)
-            transports.append(transport)
+            discovery_transports, responders = await start_discovery(config)
+            transports.extend(discovery_transports)
 
         _LOGGER.info(
             "ready: user=%s password=%s cloud_password=%s",
@@ -1338,6 +1352,11 @@ def parse_args(argv: list[str]) -> Config:
     discovery.add_argument("--no-discovery", dest="discovery", action="store_false",
                            help="do not answer kasa discovery probes")
     discovery.add_argument("--discovery-bind", default="0.0.0.0")
+    discovery.add_argument("--discovery-ports", type=int, nargs="+", metavar="PORT",
+                           default=[DISCOVERY_PORT],
+                           help=f"UDP ports to answer discovery probes on; python-kasa "
+                                f"0.12 also probes {DISCOVERY_PORT_LV3}, like some "
+                                f"recent firmwares answer on")
     discovery.add_argument("--advertise-ip",
                            help="the ip reported in the discovery result")
     discovery.add_argument("--extra-devices", type=int, default=0,
