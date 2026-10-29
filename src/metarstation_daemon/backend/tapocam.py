@@ -20,6 +20,9 @@ _LOGGER = logging.getLogger(__name__)
 _STREAM_FILENAME = "stream.m3u8"
 _IMAGE_TYPE = 'image/jpeg'
 _STREAM_SETTLE_WAIT_SECS = 15
+_STREAM_NO_DATA_TIMEOUT_SECS = 10
+"""Must stay below _STREAM_SETTLE_WAIT_SECS, so a frozen stream has already made ffmpeg exit
+by the time we check the playlist's mtime."""
 _SNAPSHOT_TIMEOUT_SECS = 30
 _RETRY_INITIAL_SECS = 10
 _RETRY_MAX_DELAY_SECS = 300
@@ -59,6 +62,8 @@ class TapoStreamer:
         self._discovered_address: str | None = None
         self._tapo_args = tapo_args
         self._connect_task: asyncio.Task | None = None
+        self._connect_generation = 0
+        """Bumped by every reset, so a connection still being built can tell it is already stale."""
         self._tapo: Tapo | None = None
         self._streamer: Streamer | None = None
         self._shutdown_event = asyncio.Event()
@@ -81,12 +86,25 @@ class TapoStreamer:
         await self.start()
 
     async def _reset(self):
+        self._connect_generation += 1
         if self._connect_task:
             self._connect_task.cancel()
             self._connect_task = None
         await self.pause_stream()
+        await self._close_tapo()
         self.ready = False
         self._discovered_address = None
+
+    async def _close_tapo(self):
+        tapo = self._tapo
+        if tapo is None:
+            return
+        self._tapo = None
+        try:
+            # close() runs its own event loop, so it must not be called from ours
+            await asyncio.get_running_loop().run_in_executor(None, tapo.close)
+        except Exception as e:
+            _LOGGER.warning(f"Closing the camera session failed: {e!r}")
 
     async def resume_stream(self):
         _LOGGER.debug('Resuming stream')
@@ -99,6 +117,7 @@ class TapoStreamer:
             includeAudio=False,
             mode="hls",
             quality=self.quality,
+            no_data_timeout=_STREAM_NO_DATA_TIMEOUT_SECS,
         )
         await self._streamer.start()
 
@@ -168,7 +187,13 @@ class TapoStreamer:
         retry_secs = _RETRY_INITIAL_SECS
         while not self._shutdown_event.is_set():
             try:
-                self._tapo = await asyncio.get_running_loop().run_in_executor(None, self._create_tapo, address)
+                generation = self._connect_generation
+                tapo = await asyncio.get_running_loop().run_in_executor(
+                    None, self._create_tapo, address, generation)
+                if tapo is None:
+                    # a reset landed while we were connecting
+                    break
+                self._tapo = tapo
                 self.ready = True
 
                 if self._connect_callback:
@@ -183,11 +208,20 @@ class TapoStreamer:
                     break
                 retry_secs = min(retry_secs * 2, _RETRY_MAX_DELAY_SECS)
 
-    def _create_tapo(self, address):
-        """Called from an executor because the Tapo constructor will block for connecting to the camera."""
+    def _create_tapo(self, address, generation):
+        """Called from an executor because the Tapo constructor will block for connecting to the camera.
+
+        Cancelling the connect task does not stop this thread, so a reset can land while the camera
+        is still being connected. Returns None in that case, after closing the instance we just
+        built.
+        """
         args = dict(self._tapo_args)
         args['host'] = address
-        return Tapo(**args)
+        tapo = Tapo(**args)
+        if generation != self._connect_generation:
+            tapo.close()
+            return None
+        return tapo
 
 
 class TapoWebcamBackend(WebcamBackend):
@@ -210,6 +244,8 @@ class TapoWebcamBackend(WebcamBackend):
                 'user': config['cloud_username'],
                 'password': config['cloud_password'],
                 'cloudPassword': config['cloud_password'],
+                'printWarnInformation': _LOGGER.warning,
+                **({'printDebugInformation': _LOGGER.debug} if self._debug else {}),
             },
         )
         self._snapshot_last: float = 0
@@ -219,7 +255,10 @@ class TapoWebcamBackend(WebcamBackend):
         self._shutdown_event = asyncio.Event()
 
     def streamer_log_callback(self, status):
-        if self._debug:
+        # the streamer reports socket errors this way, ffmpeg output as ffmpegLog
+        if isinstance(status, dict) and (error := status.get('streamError')):
+            _LOGGER.warning(f"Stream error: {error}")
+        elif self._debug:
             _LOGGER.debug(status)
 
     def streamer_connected(self):
