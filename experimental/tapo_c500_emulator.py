@@ -4,16 +4,20 @@
 # dependencies = ["pycryptodome>=3.20", "cryptography>=42"]
 # ///
 """
-Tapo C500 emulator, written against pytapo 3.3.x and python-kasa 0.10.x as the
-reference implementations. It speaks the three protocols a real camera speaks,
-so `pytapo.Tapo` and `pytapo.media_stream.streamer.Streamer` work unmodified:
+Tapo C500 emulator, written against pytapo 3.3.x/3.4.x and python-kasa 0.10.x
+as the reference implementations. It speaks the three protocols a real camera
+speaks, so `pytapo.Tapo` and `pytapo.media_stream.streamer.Streamer` work
+unmodified:
 
   1. Control channel, HTTPS (default port 443)
      Self-signed TLS. Implements the "secure" login (encrypt_type 3):
      probe -> nonce/device_confirm -> digest_passwd -> stok, then
      securePassthrough with AES-128-CBC using the lsk/ivb tokens.
-     Mirrors pytapo/__init__.py: isSecureConnection, validateDeviceConfirm,
-     generateEncryptionToken, getTag, performRequest.
+     Mirrors pytapo's legacy transport (pytapo/__init__.py in 3.3,
+     pytapo/transport/pytapo/pytapo.py in 3.4): isSecureConnection,
+     validateDeviceConfirm, generateEncryptionToken, getTag, performRequest/send.
+     pytapo 3.4 also sends a login "discover" first to pick its transport;
+     the answer offers the encrypt_type 3 login, so it stays on this one.
 
   2. Media channel, raw TCP (default port 8800)
      multipart/mixed over a hand-rolled HTTP/1.1 dialogue: unauthenticated
@@ -186,7 +190,9 @@ class Config:
 
     @property
     def hashed_cloud_password(self) -> str:
-        """pwd_digest(cloud_password, SHA256) from media_stream/_utils.py."""
+        """pwd_digest(cloud_password, SHA256) from media_stream/_utils.py. The
+        stream challenge advertises encrypt_type 3, which is what makes pytapo 3.4
+        pick SHA256 here; 3.3 follows the control channel, which is SHA256 too."""
         return sha256_upper(self.cloud_password.encode())
 
     def size_for(self, requested: str | None) -> tuple[int, int]:
@@ -199,7 +205,9 @@ class Config:
 
 def make_self_signed_cert(directory: str) -> tuple[str, str]:
     """A real C500 also presents a self-signed cert; pytapo's TlsAdapter sets
-    CERT_NONE and ALL:@SECLEVEL=0, so anything valid is accepted."""
+    CERT_NONE and ALL:@SECLEVEL=0, so anything valid is accepted. pytapo 3.4's
+    login discover goes through plain requests with verify=False instead: the
+    cert is still accepted, but only with the default cipher list."""
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
@@ -346,10 +354,19 @@ class ControlServer:
     # -- login, the encrypt_type 3 flow --------------------------------------
 
     def _login(self, params: dict) -> tuple[int, dict]:
+        if params.get("sub_method") == "discover":
+            return self._login_discover()
         if "digest_passwd" in params:
             return self._login_finish(params)
         if "cnonce" in params:
             return self._login_challenge(params)
+        return self._login_probe()
+
+    def _login_discover(self) -> tuple[int, dict]:
+        """pytapo 3.4 sends this before anything else to pick its transport. A
+        camera with the encrypt_type 3 login answers it like the probe, and
+        legacy_login_offered() then keeps pytapo on that login and lets it skip
+        the probe. A TPAP camera would answer with result.tpap instead."""
         return self._login_probe()
 
     def _login_probe(self) -> tuple[int, dict]:
@@ -374,7 +391,8 @@ class ControlServer:
         if self.config.fail_auth:
             # A wrong password shows up here, not at stage 2: the client derives
             # device_confirm from its own password and finds it does not match.
-            # pytapo then retries twice and raises "Invalid authentication data".
+            # pytapo then retries (twice in 3.3, once in 3.4) and raises
+            # "Invalid authentication data".
             _LOGGER.warning("--fail-auth: returning a device_confirm that will not match")
             confirm = hex_nonce(32) + nonce + cnonce
         _LOGGER.debug("login challenge cnonce=%s nonce=%s", cnonce, nonce)
@@ -734,9 +752,12 @@ class StreamServer:
             # No spaces after the commas and hex-only values: pytapo parses this
             # header by splitting on ' ' once, then ',', then '=' with no
             # maxsplit, so anything fancier corrupts the parse.
+            # encrypt_type="3" asks for the SHA256 cloud password hash. pytapo 3.4
+            # picks the hash from this field and falls back to MD5 without it;
+            # 3.3 ignores it.
             challenge = (
                 f'Digest realm="{STREAM_REALM}",nonce="{nonce}",'
-                f'qop="auth",opaque="{opaque}"'
+                f'qop="auth",opaque="{opaque}",encrypt_type="3"'
             )
             writer.write(
                 b"HTTP/1.1 401 Unauthorized\r\n"
