@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import datetime
 import logging
 import shutil
@@ -20,6 +21,8 @@ _STREAM_FILENAME = "stream.m3u8"
 _IMAGE_TYPE = 'image/jpeg'
 _STREAM_SETTLE_WAIT_SECS = 15
 _SNAPSHOT_TIMEOUT_SECS = 30
+_RETRY_INITIAL_SECS = 10
+_RETRY_MAX_DELAY_SECS = 300
 
 
 def _print_ffmpeg_logs(stderr: bytes):
@@ -100,21 +103,30 @@ class TapoStreamer:
         await self._streamer.start()
 
     async def pause_stream(self):
-        if self._streamer:
-            # _LOGGER.debug(f'Pausing stream - status: {self._streamer.currentAction}')
-            try:
-                if self._streamer.streamProcess:
-                    self._streamer.streamProcess.kill()
-                    await self._streamer.streamProcess.wait()
-                    # remove all contents of tempdir
-                    [f.unlink() for f in Path(self._tempdir).glob("*") if f.is_file()]
-                await self._streamer.stop()
-                self._streamer = None
-            except Exception:
-                _LOGGER.warning(
-                    "Unable to propertly cleanup streamer (memory leaks may occur, destroying our reference anyway)")
+        streamer = self._streamer
+        if streamer is None:
+            return
+        # drop our reference right away, even if the cleanup below fails
+        self._streamer = None
+
+        # _LOGGER.debug(f'Pausing stream - status: {streamer.currentAction}')
+        try:
+            process = streamer.streamProcess
+            # ffmpeg exits by itself when the stream ends (camera gone, no data, auth failure)
+            if process and process.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    process.kill()
+                await process.wait()
+            # re-raises whatever made the stream task fail
+            await streamer.stop()
+        except Exception as e:
+            _LOGGER.warning(f"Stream stopped with error: {e!r}")
+        finally:
+            # remove all contents of tempdir
+            [f.unlink() for f in Path(self._tempdir).glob("*") if f.is_file()]
 
     async def _discover(self):
+        retry_secs = _RETRY_INITIAL_SECS
         while not self._shutdown_event.is_set():
             _LOGGER.debug(f'Discovering camera on interface {self._discovery_interface}')
             if self._discovery_username and self._discovery_password:
@@ -144,15 +156,16 @@ class TapoStreamer:
             except asyncio.CancelledError:
                 break
             except Exception:
-                _LOGGER.warning('Error discovering camera', exc_info=True)
+                _LOGGER.warning(f'Error discovering camera, retrying in {retry_secs} seconds', exc_info=True)
                 try:
-                    # TODO exponential backoff?
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(retry_secs)
                 except asyncio.CancelledError:
                     break
+                retry_secs = min(retry_secs * 2, _RETRY_MAX_DELAY_SECS)
 
     async def _connect(self):
         address = self._discovered_address if self._discovered_address is not None else self._host
+        retry_secs = _RETRY_INITIAL_SECS
         while not self._shutdown_event.is_set():
             try:
                 self._tapo = await asyncio.get_running_loop().run_in_executor(None, self._create_tapo, address)
@@ -162,14 +175,13 @@ class TapoStreamer:
                     self._connect_callback()
                 break
 
-            except Exception as e:
-                _LOGGER.warning(f'Tapo connect failed! {e}')
+            except Exception:
+                _LOGGER.warning(f'Tapo connect failed! Retrying in {retry_secs} seconds', exc_info=True)
                 try:
-                    # retry after some time
-                    # TODO exponential backoff?
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(retry_secs)
                 except asyncio.CancelledError:
                     break
+                retry_secs = min(retry_secs * 2, _RETRY_MAX_DELAY_SECS)
 
     def _create_tapo(self, address):
         """Called from an executor because the Tapo constructor will block for connecting to the camera."""
