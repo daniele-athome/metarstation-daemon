@@ -12,7 +12,7 @@ from typing import BinaryIO, IO, TYPE_CHECKING
 
 from .backend import create_instance as create_backend_instance
 from .backend.interface import SensorBackend, SensorBackendQueue, WebcamBackend, WebcamBackendCallback
-from .data import SensorData, WebcamData
+from .data import SensorData
 from .frontend.http import HTTPDataFrontend
 from .frontend.interface import DataFrontend, DataRejectedError
 
@@ -91,7 +91,9 @@ class WeatherDaemon:
         await self._frontend.setup()
 
         # start collecting data
-        data_collect_task = asyncio.get_running_loop().create_task(self._collect_data_start())
+        collect_tasks = [asyncio.get_running_loop().create_task(self._collect_data_start())]
+        if self._webcam:
+            collect_tasks.append(asyncio.get_running_loop().create_task(self._collect_webcam_start()))
 
         # everything is set up!
         notify_ready()
@@ -102,9 +104,10 @@ class WeatherDaemon:
         notify_stopping()
 
         # cleanup
-        data_collect_task.cancel()
+        for task in collect_tasks:
+            task.cancel()
         # return_exceptions=True - prevent raise of asyncio.CancelledError
-        await asyncio.gather(data_collect_task, return_exceptions=True)
+        await asyncio.gather(*collect_tasks, return_exceptions=True)
         await self._backend.stop()
         if self._webcam:
             await self._webcam.stop()
@@ -116,83 +119,51 @@ class WeatherDaemon:
     async def _collect_data_start(self):
         _LOGGER.debug("Starting data collection")
 
-        while not self._shutdown_event.is_set():
+        while True:
             try:
-                # tasks in this list will be waited for
-                waiting_tasks = []
+                data: SensorData = await self._data_queue.get()
+                try:
+                    if self._dashboard:
+                        # create background job for generating a static dashboard
+                        if self._dashboard_task is None or self._dashboard_task.done():
+                            self._dashboard_task = asyncio.create_task(self._generate_dashboard(data))
+                        else:
+                            # FIXME it shouldn't happen with proper timings, but it's not the proper way to handle this
+                            _LOGGER.debug("Dashboard render still running, skipping this reading")
 
-                task_data_queue: asyncio.Future[SensorData] = asyncio.create_task(self._data_queue.get())
-                waiting_tasks.append(task_data_queue)
-
-                task_webcam_data: asyncio.Future[WebcamData] | None = None
-                if self._webcam:
-                    task_webcam_data: asyncio.Future[WebcamData] = asyncio.create_task(self._webcam_callback.get_data())
-                    waiting_tasks.append(task_webcam_data)
-
-                task_shutdown_event = asyncio.create_task(self._shutdown_event.wait())
-                waiting_tasks.append(task_shutdown_event)
-
-                # wait for the first data available (or the shutdown event)
-                done_tasks, pending_tasks = await asyncio.wait(
-                    waiting_tasks,
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-
-                # cancel any pending tasks
-                [t.cancel() for t in pending_tasks]
-                # return_exceptions=True - prevent raise of asyncio.CancelledError
-                await asyncio.gather(*pending_tasks, return_exceptions=True)
-
-                if self._shutdown_event.is_set():
-                    # exit immediately
-                    break
-
-                if task_data_queue in done_tasks:
-                    # _LOGGER.debug(f"Collecting data")
-                    # we got sensor data!
-                    data = task_data_queue.result()
-                    try:
-                        if self._dashboard:
-                            # create background job for generating a static dashboard
-                            if self._dashboard_task is None or self._dashboard_task.done():
-                                self._dashboard_task = asyncio.create_task(self._generate_dashboard(data))
-                            else:
-                                # FIXME it shouldn't happen with proper timings, but it's not the proper way to handle this
-                                _LOGGER.debug("Dashboard render still running, skipping this reading")
-
-                        # we also send the data that failed during the previous attempt
-                        await self._frontend.send_data([*self._failed_data, data])
-                        self._failed_data.clear()
-                    except asyncio.CancelledError:
-                        # we've been canceled, shutting down
-                        continue
-                    except DataRejectedError:
-                        _LOGGER.warning("Data was rejected by server, dropping %d readings",
-                                        len(self._failed_data) + 1, exc_info=True)
-                        self._failed_data.clear()
-                    except Exception:
-                        # TODO proper exception handling
-                        _LOGGER.warning("Failed to send data", exc_info=True)
-                        # store the data for a later retry attempt
-                        self._failed_data.append(data)
-
-                if task_webcam_data in done_tasks:
-                    webcam_data = task_webcam_data.result()
-                    if webcam_data:
-                        try:
-                            await self._frontend.send_webcam(webcam_data)
-                        except asyncio.CancelledError:
-                            # we've been canceled, shutting down
-                            continue
-                        except Exception:
-                            # TODO proper exception handling
-                            _LOGGER.warning("Failed to send webcam data", exc_info=True)
+                    # we also send the data that failed during the previous attempt
+                    await self._frontend.send_data([*self._failed_data, data])
+                    self._failed_data.clear()
+                except DataRejectedError:
+                    _LOGGER.warning("Data was rejected by server, dropping %d readings",
+                                    len(self._failed_data) + 1, exc_info=True)
+                    self._failed_data.clear()
+                except Exception:
+                    # TODO proper exception handling
+                    _LOGGER.warning("Failed to send data", exc_info=True)
+                    # store the data for a later retry attempt
+                    self._failed_data.append(data)
             except asyncio.CancelledError:
                 # we've been canceled, shutting down
-                continue
+                break
             except Exception:
                 _LOGGER.error("Unexpected error", exc_info=True)
                 # TODO proper error handling
+
+    async def _collect_webcam_start(self):
+        _LOGGER.debug("Starting webcam data collection")
+
+        while True:
+            try:
+                webcam_data = await self._webcam_callback.get_data()
+                if webcam_data:
+                    await self._frontend.send_webcam(webcam_data)
+            except asyncio.CancelledError:
+                # we've been canceled, shutting down
+                break
+            except Exception:
+                # TODO proper exception handling
+                _LOGGER.warning("Failed to send webcam data", exc_info=True)
 
     async def _generate_dashboard(self, data: SensorData):
         try:

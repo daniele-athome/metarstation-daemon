@@ -62,9 +62,8 @@ async def _collect(daemon: WeatherDaemon, frontend: FakeFrontend, readings: list
                 while len(frontend.batches) < i:
                     await asyncio.sleep(0.01)
     finally:
-        # noinspection PyProtectedMember
-        daemon._shutdown_event.set()
-        await asyncio.wait_for(task, TEST_TIMEOUT_SECS)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 async def test_sends_every_reading(daemon):
