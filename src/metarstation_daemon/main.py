@@ -44,12 +44,15 @@ class WeatherDaemon:
         with open(config_file, 'rb') as config_file_fp:
             self.config = tomllib.load(config_file_fp)
 
-        # sensor backend
+        # sensor backends
         self._data_queue = asyncio.Queue(maxsize=DATA_QUEUE_LIMIT)
-        self._backend: SensorBackend = create_backend_instance(
-            self.config['backend']['module'],
-            self.config['backend'],
-            SensorBackendQueue(self._data_queue))
+        self._backends: list[SensorBackend] = [
+            create_backend_instance(
+                backend_config['module'],
+                backend_config,
+                SensorBackendQueue(self._data_queue))
+            for backend_config in self.config['backend']
+        ]
 
         # webcam backend
         self._webcam: WebcamBackend | None = None
@@ -80,8 +83,9 @@ class WeatherDaemon:
         for sig in (signal.SIGINT, signal.SIGTERM):
             asyncio.get_running_loop().add_signal_handler(sig, functools.partial(sig_handler, sig))
 
-        # start collecting data from the device
-        await self._backend.start()
+        # start collecting data from the devices
+        for backend in self._backends:
+            await backend.start()
 
         # start collecting images from the webcam
         if self._webcam:
@@ -108,7 +112,8 @@ class WeatherDaemon:
             task.cancel()
         # return_exceptions=True - prevent raise of asyncio.CancelledError
         await asyncio.gather(*collect_tasks, return_exceptions=True)
-        await self._backend.stop()
+        for backend in self._backends:
+            await backend.stop()
         if self._webcam:
             await self._webcam.stop()
         if self._dashboard_task:

@@ -10,7 +10,7 @@ TEST_TIMEOUT_SECS = 5
 """Upper bound for the daemon to react in tests: hitting it means the data collection loop is stuck."""
 
 CONFIG = """
-[backend]
+[[backend]]
 module = "dummy.DummySensorBackend"
 
 [frontend]
