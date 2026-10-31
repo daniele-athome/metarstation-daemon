@@ -72,12 +72,12 @@ class WS90SensorBackend(SensorBackend):
 
     async def start(self):
         if self.bt_address:
-            _LOGGER.debug(f"WS90 scanner for {self.bt_address} starting")
+            _LOGGER.info(f"WS90 scanner for {self.bt_address} starting")
         else:
-            _LOGGER.debug(f"WS90 scanner for any BTHome device starting")
+            _LOGGER.info("WS90 scanner for any BTHome device starting")
 
     async def stop(self):
-        _LOGGER.debug("WS90 scanner stopping")
+        _LOGGER.info("WS90 scanner stopping")
 
     async def get_data(self) -> SensorData|None:
         try:

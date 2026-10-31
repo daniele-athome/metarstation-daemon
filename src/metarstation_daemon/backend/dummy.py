@@ -21,10 +21,10 @@ class DummySensorBackend(SensorBackend):
         self._delay_secs = config.get('delay_secs', 0)
 
     async def start(self):
-        _LOGGER.debug(f"Dummy sensor backend starting")
+        _LOGGER.info(f"Dummy sensor backend starting")
 
     async def stop(self):
-        _LOGGER.debug("Dummy sensor backend stopping")
+        _LOGGER.info("Dummy sensor backend stopping")
 
     async def get_data(self) -> SensorData|None:
         if self._delay_secs:
