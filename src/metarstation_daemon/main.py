@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import datetime
 import functools
 import logging
 import os
@@ -11,8 +12,8 @@ from io import BufferedReader
 from typing import BinaryIO, IO, TYPE_CHECKING
 
 from .backend import create_instance as create_backend_instance
-from .backend.interface import SensorBackend, SensorBackendQueue, WebcamBackend, WebcamBackendCallback
-from .data import SensorData
+from .backend.interface import SensorBackend, WebcamBackend, WebcamBackendCallback
+from .data import SensorData, merge_sensor_data
 from .frontend.http import HTTPDataFrontend
 from .frontend.interface import DataFrontend, DataRejectedError
 
@@ -23,8 +24,11 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-DATA_QUEUE_LIMIT = 200
-"""Limit of the data queue used by sensor backends."""
+COLLECT_INTERVAL_SECS = 60
+"""Default delay between two data collection cycles."""
+
+COLLECT_TIMEOUT_SECS = 30
+"""Default time a data collection cycle waits for the sensor backends."""
 
 FAILED_QUEUE_LIMIT = 50
 """Limit of the data queue for caching data that failed to send to the frontends."""
@@ -45,12 +49,11 @@ class WeatherDaemon:
             self.config = tomllib.load(config_file_fp)
 
         # sensor backends
-        self._data_queue = asyncio.Queue(maxsize=DATA_QUEUE_LIMIT)
+        collect_config = self.config.get('collector', {})
+        self._collect_interval_secs: int = collect_config.get('interval_secs', COLLECT_INTERVAL_SECS)
+        self._collect_timeout_secs: int = collect_config.get('timeout_secs', COLLECT_TIMEOUT_SECS)
         self._backends: list[SensorBackend] = [
-            create_backend_instance(
-                backend_config['module'],
-                backend_config,
-                SensorBackendQueue(self._data_queue))
+            create_backend_instance(backend_config['module'], backend_config)
             for backend_config in self.config['backend']
         ]
 
@@ -121,33 +124,66 @@ class WeatherDaemon:
             # return_exceptions=True - prevent raise of asyncio.CancelledError
             await asyncio.gather(self._dashboard_task, return_exceptions=True)
 
+    async def _collect_readings(self) -> list[SensorData]:
+        tasks = [asyncio.create_task(backend.get_data()) for backend in self._backends]
+        try:
+            # returns as soon as every backend answered, or when the timeout expires
+            await asyncio.wait(tasks, timeout=self._collect_timeout_secs)
+        finally:
+            for task in tasks:
+                task.cancel()
+            # return_exceptions=True - prevent raise of asyncio.CancelledError
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        # we need the backend order (for merging the values), so iterate over the task list
+        readings = []
+        for backend, task in zip(self._backends, tasks):
+            backend_name = type(backend).__name__
+            if task.cancelled():
+                _LOGGER.warning("Backend %s did not provide data in time", backend_name)
+                continue
+            error = task.exception()
+            if error:
+                _LOGGER.warning("Backend %s failed to provide data", backend_name, exc_info=error)
+                continue
+            data = task.result()
+            if data:
+                readings.append(data)
+        return readings
+
     async def _collect_data_start(self):
         _LOGGER.debug("Starting data collection")
 
         while True:
             try:
-                data: SensorData = await self._data_queue.get()
-                try:
-                    if self._dashboard:
-                        # create background job for generating a static dashboard
-                        if self._dashboard_task is None or self._dashboard_task.done():
-                            self._dashboard_task = asyncio.create_task(self._generate_dashboard(data))
-                        else:
-                            # FIXME it shouldn't happen with proper timings, but it's not the proper way to handle this
-                            _LOGGER.debug("Dashboard render still running, skipping this reading")
+                readings = await self._collect_readings()
+                if readings:
+                    data = merge_sensor_data(readings, datetime.datetime.now(datetime.UTC))
+                    try:
+                        if self._dashboard:
+                            # create background job for generating a static dashboard
+                            if self._dashboard_task is None or self._dashboard_task.done():
+                                self._dashboard_task = asyncio.create_task(self._generate_dashboard(data))
+                            else:
+                                # FIXME it shouldn't happen with proper timings, but it's not the proper way to handle this
+                                _LOGGER.debug("Dashboard render still running, skipping this reading")
 
-                    # we also send the data that failed during the previous attempt
-                    await self._frontend.send_data([*self._failed_data, data])
-                    self._failed_data.clear()
-                except DataRejectedError:
-                    _LOGGER.warning("Data was rejected by server, dropping %d readings",
-                                    len(self._failed_data) + 1, exc_info=True)
-                    self._failed_data.clear()
-                except Exception:
-                    # TODO proper exception handling
-                    _LOGGER.warning("Failed to send data", exc_info=True)
-                    # store the data for a later retry attempt
-                    self._failed_data.append(data)
+                        # we also send the data that failed during the previous attempt
+                        await self._frontend.send_data([*self._failed_data, data])
+                        self._failed_data.clear()
+                    except DataRejectedError:
+                        _LOGGER.warning("Data was rejected by server, dropping %d readings",
+                                        len(self._failed_data) + 1, exc_info=True)
+                        self._failed_data.clear()
+                    except Exception:
+                        # TODO proper exception handling
+                        _LOGGER.warning("Failed to send data", exc_info=True)
+                        # store the data for a later retry attempt
+                        self._failed_data.append(data)
+                else:
+                    _LOGGER.debug("No sensor data collected, skipping this cycle")
+
+                await asyncio.sleep(self._collect_interval_secs)
             except asyncio.CancelledError:
                 # we've been canceled, shutting down
                 break

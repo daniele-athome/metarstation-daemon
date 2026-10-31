@@ -1,6 +1,6 @@
 import asyncio
 
-import pytest
+from conftest import FakeSensorBackend
 
 from metarstation_daemon.data import SensorData
 from metarstation_daemon.frontend.interface import DataFrontend, DataFrontendError, DataRejectedError
@@ -8,16 +8,6 @@ from metarstation_daemon.main import WeatherDaemon
 
 TEST_TIMEOUT_SECS = 5
 """Upper bound for the daemon to react in tests: hitting it means the data collection loop is stuck."""
-
-CONFIG = """
-[[backend]]
-module = "dummy.DummySensorBackend"
-
-[frontend]
-data_url = "http://localhost/push"
-image_url = "http://localhost/image"
-api_token = "token"
-"""
 
 
 class FakeFrontend(DataFrontend):
@@ -41,26 +31,32 @@ class FakeFrontend(DataFrontend):
         pass
 
 
-@pytest.fixture
-def daemon(tmp_path) -> WeatherDaemon:
-    config_file = tmp_path / 'config.toml'
-    config_file.write_text(CONFIG)
-    return WeatherDaemon(['weather-daemon', '-c', str(config_file)])
+def _reading(temperature: float) -> SensorData:
+    """A reading that can be told apart from the others in a batch."""
+    return SensorData(temperature=temperature)
+
+
+def _temperatures(batches: list[list[SensorData]]) -> list[list[float]]:
+    """Merged packets are new objects, so batches are compared by content."""
+    return [[data.temperature for data in batch] for batch in batches]
 
 
 async def _collect(daemon: WeatherDaemon, frontend: FakeFrontend, readings: list[SensorData]):
-    """Runs the data collection loop, feeding it one reading at a time."""
+    """Runs the data collection loop, feeding it one reading per cycle."""
     # noinspection PyProtectedMember
     daemon._frontend = frontend
     # noinspection PyProtectedMember
+    daemon._backends = [FakeSensorBackend(*readings)]
+    # noinspection PyProtectedMember
+    daemon._collect_interval_secs = 0
+    # noinspection PyProtectedMember
+    daemon._collect_timeout_secs = TEST_TIMEOUT_SECS
+    # noinspection PyProtectedMember
     task = asyncio.create_task(daemon._collect_data_start())
     try:
-        for i, reading in enumerate(readings, start=1):
-            # noinspection PyProtectedMember
-            daemon._data_queue.put_nowait(reading)
-            async with asyncio.timeout(TEST_TIMEOUT_SECS):
-                while len(frontend.batches) < i:
-                    await asyncio.sleep(0.01)
+        async with asyncio.timeout(TEST_TIMEOUT_SECS):
+            while len(frontend.batches) < len(readings):
+                await asyncio.sleep(0.01)
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
@@ -68,36 +64,32 @@ async def _collect(daemon: WeatherDaemon, frontend: FakeFrontend, readings: list
 
 async def test_sends_every_reading(daemon):
     frontend = FakeFrontend()
-    first, second = SensorData(), SensorData()
 
-    await _collect(daemon, frontend, [first, second])
+    await _collect(daemon, frontend, [_reading(1), _reading(2)])
 
-    assert frontend.batches == [[first], [second]]
+    assert _temperatures(frontend.batches) == [[1], [2]]
 
 
 async def test_temporary_failure_sends_the_reading_again_later(daemon):
     frontend = FakeFrontend(DataFrontendError())
-    first, second = SensorData(), SensorData()
 
-    await _collect(daemon, frontend, [first, second])
+    await _collect(daemon, frontend, [_reading(1), _reading(2)])
 
-    assert frontend.batches == [[first], [first, second]]
+    assert _temperatures(frontend.batches) == [[1], [1, 2]]
 
 
 async def test_rejected_reading_is_dropped(daemon):
     frontend = FakeFrontend(DataRejectedError())
-    first, second = SensorData(), SensorData()
 
-    await _collect(daemon, frontend, [first, second])
+    await _collect(daemon, frontend, [_reading(1), _reading(2)])
 
-    assert frontend.batches == [[first], [second]]
+    assert _temperatures(frontend.batches) == [[1], [2]]
 
 
 async def test_rejection_drops_the_whole_batch(daemon):
     """A rejected batch can't be told apart: keeping any of it could block every later reading."""
     frontend = FakeFrontend(DataFrontendError(), DataRejectedError())
-    first, second, third = SensorData(), SensorData(), SensorData()
 
-    await _collect(daemon, frontend, [first, second, third])
+    await _collect(daemon, frontend, [_reading(1), _reading(2), _reading(3)])
 
-    assert frontend.batches == [[first], [first, second], [third]]
+    assert _temperatures(frontend.batches) == [[1], [1, 2], [3]]

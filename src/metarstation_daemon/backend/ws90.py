@@ -8,7 +8,7 @@ from bthome_ble import BTHomeBluetoothDeviceData
 from habluetooth import BluetoothServiceInfoBleak
 from sensor_state_data import SensorValue, DeviceKey
 
-from .interface import SensorBackend, SensorBackendQueue
+from .interface import SensorBackend
 from ..data import SensorData
 
 SERVICE_DATA_UUID = '6720fc43-27ed-4c02-ac27-e4ea85b5bcfd'
@@ -33,8 +33,12 @@ def _is_packet2(values: dict[DeviceKey, SensorValue]) -> bool:
     return DeviceKey('battery', None) in values
 
 
+def _battery_key(address: str) -> str:
+    """Battery dict key for the device the advertisement came from."""
+    return 'ws90-' + address.replace(':', '').replace('-', '').lower()
+
+
 DATA_MAPPING = {
-    'battery': ('battery', int),
     'temperature': ('temperature', float),
     'humidity': ('humidity', float),
     'dew_point': ('dew_point', float),
@@ -46,16 +50,15 @@ DATA_MAPPING = {
     'uv_index': ('uv_index', int),
     'precipitation': ('precipitation', float),
 }
+"""Sensor values mapping to SensorData attributes. Battery is handled apart, being keyed by device."""
 
 
 class WS90SensorBackend(SensorBackend):
 
-    def __init__(self, config, queue: SensorBackendQueue):
-        super().__init__(config, queue)
+    def __init__(self, config):
+        super().__init__(config)
         bt_address = config.get('bt_address', None)
         self.bt_address: str | None = bt_address.upper() if bt_address else None
-        self.scanner_sleep_secs: int = config.get('scanner_sleep_secs', 60)
-        self.scanner_timeout_secs: int = config.get('scanner_timeout_secs', 60)
         # TODO passive scan doesn't work without some tricks; it's probably better to just use active scan at regular intervals anyway
         self._scanner = BleakScanner(self._callback,
                                      scanning_mode='active',
@@ -66,78 +69,42 @@ class WS90SensorBackend(SensorBackend):
         self._packet2_received = False
         self._latest_data = SensorData()
         self._data_event = asyncio.Event()
-        self._data_collect_task: asyncio.Task | None = None
 
     async def start(self):
         if self.bt_address:
             _LOGGER.debug(f"WS90 scanner for {self.bt_address} starting")
         else:
             _LOGGER.debug(f"WS90 scanner for any BTHome device starting")
-        self._data_collect_task = asyncio.get_running_loop().create_task(self._collect_data_start())
 
     async def stop(self):
         _LOGGER.debug("WS90 scanner stopping")
-        # this will trigger the shutdown mechanism in _collect_data_start
-        self._data_event.set()
-        if self._data_collect_task:
-            self._data_collect_task.cancel()
-            await asyncio.gather(self._data_collect_task, return_exceptions=True)
 
-    async def _collect_data_start(self):
-        # FIXME better and safer exit strategy (i.e. do not use self._data_event for existing)
-        while True:
+    async def get_data(self) -> SensorData|None:
+        try:
+            # start scanning: the callback will trigger the data event when the packet is complete
+            await self._scanner.start()
+            # no timeout here: the daemon decides when to give up and will cancel us
+            await self._data_event.wait()
+            return self._latest_data
+        finally:
+            self._reset_sensor_data()
             # noinspection broad-exception
             try:
-                # start scanning: the callback will trigger the data event when ready
-                await self._scanner.start()
-
-                # wait for the data event from the scanner callback
-                await asyncio.wait_for(self._data_event.wait(), timeout=self.scanner_timeout_secs)
-                self._data_event.clear()
-
-                if self._packet1_received and self._packet2_received:
-                    # data is ready: push to data collector
-                    self._push_sensor_value()
-                else:
-                    # shutting down
-                    # (the finally will stop the scanner)
-                    break
-
-                # stop scanning and wait for the interval
-                # (the finally will stop the scanner)
-            except asyncio.CancelledError:
-                # we've been canceled, shutting down
-                break
-            except asyncio.TimeoutError:
-                # the next scan could have data that is unrelated to the last scan, so reset the internal buffer
-                self._reset_sensor_data()
-                # clear the data event (it wasn't cleared because of the timeout)
-                self._data_event.clear()
+                await self._scanner.stop()
             except Exception:
-                _LOGGER.error("Unexpected error", exc_info=True)
-                # TODO proper error handling
-            finally:
-                # noinspection broad-exception
-                try:
-                    await self._scanner.stop()
-                except Exception:
-                    _LOGGER.warning("Unable to stop bluetooth scanner", exc_info=True)
-
-            await asyncio.sleep(self.scanner_sleep_secs)
-
-    def _push_sensor_value(self):
-        self.queue.push(self._latest_data)
-        # reset buffer object
-        self._reset_sensor_data()
+                _LOGGER.warning("Unable to stop bluetooth scanner", exc_info=True)
 
     def _reset_sensor_data(self):
         self._latest_data = SensorData()
         self._packet1_received = False
         self._packet2_received = False
+        self._data_event.clear()
 
-    def _add_sensor_value(self, value: SensorValue):
+    def _add_sensor_value(self, value: SensorValue, address: str):
         sensor_id = value.device_key.key
-        if sensor_id in DATA_MAPPING:
+        if sensor_id == 'battery':
+            self._latest_data.battery = {_battery_key(address): int(value.native_value)}
+        elif sensor_id in DATA_MAPPING:
             prop_name, converter = DATA_MAPPING[sensor_id]
             setattr(self._latest_data, prop_name, converter(value.native_value))
 
@@ -166,7 +133,7 @@ class WS90SensorBackend(SensorBackend):
         if sensor_values:
             _LOGGER.debug(f"Advertisement data: {sensor_values}")
             for sensor_value in sensor_values.values():
-                self._add_sensor_value(sensor_value)
+                self._add_sensor_value(sensor_value, device.address)
 
             if _is_packet1(sensor_values):
                 self._packet1_received = True
@@ -177,5 +144,5 @@ class WS90SensorBackend(SensorBackend):
                 self._latest_data.timestamp = datetime.datetime.now(datetime.UTC)
                 # data packet is now ready for collection
                 _LOGGER.info(f"Latest data: {self._latest_data}")
-                # this will trigger the collection loop in _collect_data_start
+                # this will wake up get_data
                 self._data_event.set()

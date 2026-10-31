@@ -3,43 +3,27 @@ import asyncio
 from ..data import SensorData, WebcamData
 
 
-def _put_drop_oldest(queue: asyncio.Queue, item) -> None:
-    """Put item, discarding the oldest element if the queue is full."""
-    # try again until we can really put the new item
-    while True:
-        try:
-            queue.put_nowait(item)
-            return
-        except asyncio.QueueFull:
-            try:
-                queue.get_nowait()
-            except asyncio.QueueEmpty:
-                # another consumer drained it in the meantime
-                pass
-
-
-class SensorBackendQueue:
-    def __init__(self, queue):
-        self._queue: asyncio.Queue[SensorData] = queue
-
-    def push(self, data: SensorData):
-        _put_drop_oldest(self._queue, data)
-
-
 class SensorBackend:
 
-    def __init__(self, config: dict, queue: SensorBackendQueue):
+    def __init__(self, config: dict):
         """
         Initialize the sensor backend.
         :param config: configuration parameters
-        :param queue: a queue interface to push sensor data
         """
-        self.queue = queue
+        pass
 
     async def start(self):
         raise NotImplementedError()
 
     async def stop(self):
+        raise NotImplementedError()
+
+    async def get_data(self) -> SensorData|None:
+        """
+        Acquire and return the current reading, or None when the device had nothing to give.
+
+        May block until the data is available: the daemon applies its own timeout and cancels the call.
+        """
         raise NotImplementedError()
 
 

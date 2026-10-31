@@ -2,9 +2,12 @@ import asyncio
 import datetime
 import logging
 
-from .interface import SensorBackend, SensorBackendQueue
+from .interface import SensorBackend
 from ..data import SensorData
 
+
+BATTERY_KEY = 'dummy'
+"""Battery dict key for the dummy device."""
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -12,49 +15,33 @@ _LOGGER = logging.getLogger(__name__)
 class DummySensorBackend(SensorBackend):
     """A dummy sensor backend."""
 
-    def __init__(self, config, queue: SensorBackendQueue):
-        super().__init__(config, queue)
-        self._data_collect_task: asyncio.Task | None = None
-        self._sleep_secs = config.get('sleep_secs', 60)
-        self._running = False
+    def __init__(self, config):
+        super().__init__(config)
+        # artificial delay before answering, to exercise the collection timeout
+        self._delay_secs = config.get('delay_secs', 0)
 
     async def start(self):
         _LOGGER.debug(f"Dummy sensor backend starting")
-        self._data_collect_task = asyncio.get_running_loop().create_task(self._collect_data_start())
-        self._running = True
 
     async def stop(self):
         _LOGGER.debug("Dummy sensor backend stopping")
-        # this will trigger the shutdown mechanism in _collect_data_start
-        self._running = False
-        if self._data_collect_task:
-            self._data_collect_task.cancel()
-            await asyncio.gather(self._data_collect_task, return_exceptions=True)
 
-    async def _collect_data_start(self):
-        while self._running:
-            try:
-                self.queue.push(SensorData(
-                    timestamp=datetime.datetime.now(datetime.UTC),
-                    battery=100,
-                    temperature=20.2,
-                    humidity=64,
-                    dew_point=13.16,
-                    pressure=997.6,
-                    illumination=0,
-                    wind_speed=3,
-                    gust_speed=0,
-                    wind_direction=45,
-                    uv_index=0,
-                    raining=None,
-                    precipitation=331.4,
-                ))
+    async def get_data(self) -> SensorData|None:
+        if self._delay_secs:
+            await asyncio.sleep(self._delay_secs)
 
-                await asyncio.sleep(self._sleep_secs)
-
-            except asyncio.CancelledError:
-                # we've been canceled, shutting down
-                break
-            except Exception:
-                _LOGGER.error("Unexpected error", exc_info=True)
-                # TODO proper error handling
+        return SensorData(
+            timestamp=datetime.datetime.now(datetime.UTC),
+            battery={BATTERY_KEY: 100},
+            temperature=20.2,
+            humidity=64,
+            dew_point=13.16,
+            pressure=997.6,
+            illumination=0,
+            wind_speed=3,
+            gust_speed=0,
+            wind_direction=45,
+            uv_index=0,
+            raining=None,
+            precipitation=331.4,
+        )

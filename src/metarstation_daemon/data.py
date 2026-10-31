@@ -1,5 +1,6 @@
 import datetime
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass, field, fields
 
 from mashumaro import DataClassDictMixin
 
@@ -15,8 +16,9 @@ class SensorData(DataClassDictMixin):
     )
     """Sensor reading timestamp."""
 
-    battery: int|None = None
-    """Battery level (%). Use None for data unavailable, BATTERY_AC when on AC power."""
+    battery: dict[str, int]|None = None
+    """Battery level (%) per device, keyed by the reporting device. Use None for data unavailable,
+    BATTERY_VALUE_AC when on AC power."""
 
     temperature: float|None = None
     """Temperature in degrees celsius."""
@@ -50,6 +52,28 @@ class SensorData(DataClassDictMixin):
 
     precipitation: float|None = None
     """Precipitation (mm/h)."""
+
+
+_MERGE_SKIP = ('timestamp', 'battery')
+"""Fields of SensorData that merge_sensor_data handles on its own."""
+
+
+def merge_sensor_data(readings: Iterable[SensorData],
+                      timestamp: datetime.datetime) -> SensorData:
+    """Merges readings in configuration order: the last non-None value wins."""
+    merged = SensorData(timestamp=timestamp)
+    battery: dict[str, int] = {}
+    for reading in readings:
+        battery |= reading.battery or {}
+        for data_field in fields(SensorData):
+            if data_field.name in _MERGE_SKIP:
+                continue
+            value = getattr(reading, data_field.name)
+            if value is not None:
+                setattr(merged, data_field.name, value)
+    # keep it null in the JSON when no device reported a battery, like any other field
+    merged.battery = battery or None
+    return merged
 
 
 @dataclass(kw_only=True)

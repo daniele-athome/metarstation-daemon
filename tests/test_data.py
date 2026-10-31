@@ -3,7 +3,7 @@ import datetime
 
 import pytest
 
-from metarstation_daemon.data import BATTERY_VALUE_AC, SensorData, WebcamData
+from metarstation_daemon.data import BATTERY_VALUE_AC, SensorData, WebcamData, merge_sensor_data
 
 
 def test_defaults_are_unavailable():
@@ -54,10 +54,70 @@ def test_unavailable_values_are_serialized_as_null(sensor_data_empty):
 
 
 def test_ac_battery_value_survives_serialization():
-    data = SensorData(battery=BATTERY_VALUE_AC)
+    data = SensorData(battery={'ws90-aabbccddeeff': BATTERY_VALUE_AC})
 
-    assert data.to_dict()['battery'] == -1
-    assert SensorData.from_dict(data.to_dict()).battery == BATTERY_VALUE_AC
+    assert data.to_dict()['battery'] == {'ws90-aabbccddeeff': -1}
+    assert SensorData.from_dict(data.to_dict()).battery == {'ws90-aabbccddeeff': BATTERY_VALUE_AC}
+
+
+class TestMergeSensorData:
+    """Readings from several backends become the single packet sent to the server."""
+
+    def test_the_last_reading_wins(self, timestamp):
+        merged = merge_sensor_data([SensorData(temperature=1.0), SensorData(temperature=2.0)],
+                                   timestamp)
+
+        assert merged.temperature == 2.0
+
+    def test_an_unavailable_value_keeps_the_previous_one(self, timestamp):
+        merged = merge_sensor_data([SensorData(temperature=1.0), SensorData(humidity=50.0)],
+                                   timestamp)
+
+        assert merged.temperature == 1.0
+        assert merged.humidity == 50.0
+
+    def test_missing_values_stay_unavailable(self, timestamp):
+        merged = merge_sensor_data([SensorData(temperature=1.0)], timestamp)
+
+        assert merged.humidity is None
+
+    def test_every_field_is_merged(self, sensor_data_full, sensor_data_empty, timestamp):
+        merged = merge_sensor_data([sensor_data_empty, sensor_data_full], timestamp)
+
+        # a field added to SensorData must be merged without touching merge_sensor_data
+        assert merged == sensor_data_full
+
+    def test_no_readings_give_an_empty_packet(self, timestamp):
+        merged = merge_sensor_data([], timestamp)
+
+        for f in dataclasses.fields(merged):
+            if f.name != 'timestamp':
+                assert getattr(merged, f.name) is None
+
+    def test_battery_keys_are_merged(self, timestamp):
+        merged = merge_sensor_data([SensorData(battery={'ws90-aabbccddeeff': 80}),
+                                    SensorData(battery={'dummy': 100})], timestamp)
+
+        assert merged.battery == {'ws90-aabbccddeeff': 80, 'dummy': 100}
+
+    def test_the_last_battery_wins_on_a_duplicate_key(self, timestamp):
+        merged = merge_sensor_data([SensorData(battery={'dummy': 80}),
+                                    SensorData(battery={'dummy': 100})], timestamp)
+
+        assert merged.battery == {'dummy': 100}
+
+    def test_battery_is_unavailable_when_nobody_reported_it(self, timestamp):
+        merged = merge_sensor_data([SensorData(temperature=1.0)], timestamp)
+
+        # null in the JSON, like any other unavailable field
+        assert merged.battery is None
+
+    def test_the_caller_timestamp_wins_over_the_readings(self, timestamp):
+        collected_at = timestamp + datetime.timedelta(minutes=5)
+
+        merged = merge_sensor_data([SensorData(timestamp=timestamp, temperature=1.0)], collected_at)
+
+        assert merged.timestamp == collected_at
 
 
 def test_webcam_data_requires_every_field():

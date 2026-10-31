@@ -1,8 +1,10 @@
+[collector]
+interval_secs = 60
+timeout_secs = 30
+
 [[backend]]
 module = "ws90.WS90SensorBackend"
 #bt_address = "XX:XX:XX:XX:XX:XX"
-scanner_sleep_secs = 10
-scanner_timeout_secs = 30
 
 [webcam]
 discovery_interface = "wlan0"
