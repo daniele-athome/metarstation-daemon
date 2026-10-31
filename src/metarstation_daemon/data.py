@@ -4,9 +4,6 @@ from dataclasses import dataclass, field, fields
 
 from mashumaro import DataClassDictMixin
 
-BATTERY_VALUE_AC = -1
-"""Battery value when AC is connected."""
-
 
 @dataclass(kw_only=True)
 class SensorData(DataClassDictMixin):
@@ -17,8 +14,7 @@ class SensorData(DataClassDictMixin):
     """Sensor reading timestamp."""
 
     battery: dict[str, int]|None = None
-    """Battery level (%) per device, keyed by the reporting device. Use None for data unavailable,
-    BATTERY_VALUE_AC when on AC power."""
+    """Battery level (%) per device, keyed by the reporting device. Use None for data unavailable."""
 
     temperature: float|None = None
     """Temperature in degrees celsius."""

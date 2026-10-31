@@ -3,7 +3,7 @@ import datetime
 
 import pytest
 
-from metarstation_daemon.data import BATTERY_VALUE_AC, SensorData, WebcamData, merge_sensor_data
+from metarstation_daemon.data import SensorData, WebcamData, merge_sensor_data
 
 
 def test_defaults_are_unavailable():
@@ -51,13 +51,6 @@ def test_unavailable_values_are_serialized_as_null(sensor_data_empty):
     serialized = sensor_data_empty.to_dict()
 
     assert all(value is None for key, value in serialized.items() if key != 'timestamp')
-
-
-def test_ac_battery_value_survives_serialization():
-    data = SensorData(battery={'ws90-aabbccddeeff': BATTERY_VALUE_AC})
-
-    assert data.to_dict()['battery'] == {'ws90-aabbccddeeff': -1}
-    assert SensorData.from_dict(data.to_dict()).battery == {'ws90-aabbccddeeff': BATTERY_VALUE_AC}
 
 
 class TestMergeSensorData:
