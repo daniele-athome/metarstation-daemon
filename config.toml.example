@@ -6,6 +6,9 @@ timeout_secs = 30
 module = "ws90.WS90SensorBackend"
 #bt_address = "XX:XX:XX:XX:XX:XX"
 
+[[backend]]
+module = "power.SystemPowerBackend"
+
 [webcam]
 discovery_interface = "wlan0"
 camera_username = "camera_username"
